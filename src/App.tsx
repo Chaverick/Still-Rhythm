@@ -19,6 +19,8 @@ import {
   getEmptyDay,
   getFiveMinSlotIndex,
   getLocalDateKey,
+  hasMigratedFromStill,
+  inspectLegacyStillData,
   loadBuckets,
   loadCalibration,
   loadDays,
@@ -26,7 +28,10 @@ import {
   loadEvents,
   loadNotes,
   loadSettings,
+  markMigratedFromStill,
   mergeBackupPayload,
+  mergeLegacySettings,
+  readLegacyStillBackup,
   saveBuckets,
   saveCalibration,
   saveDays,
@@ -34,6 +39,7 @@ import {
   saveEvents,
   saveNotes,
   saveSettings,
+  type LegacyStillSummary,
   type StillBackupPayload,
 } from './lib/storage';
 import type {
@@ -80,6 +86,7 @@ export function App() {
   const [pipActive, setPipActive] = useState(false);
   const [pipWindowRef, setPipWindowRef] = useState<Window | null>(null);
   const [falseAlarmTimestamps, setFalseAlarmTimestamps] = useState<number[]>([]);
+  const [legacyStill] = useState<LegacyStillSummary>(() => inspectLegacyStillData());
 
   const [pauseSheetState, setPauseSheetState] = useState<{
     open: boolean;
@@ -640,35 +647,80 @@ export function App() {
     URL.revokeObjectURL(url);
   }, [buckets, days, events, notes, settings]);
 
+  const applyIncomingBackup = useCallback(
+    (payload: StillBackupPayload, sourceLabel: 'still-local' | 'file') => {
+      const merged = mergeBackupPayload({ days, events, notes, buckets }, payload);
+      setDays(merged.days);
+      setEvents(merged.events);
+      setNotes(merged.notes);
+      setBuckets(merged.buckets);
+      saveDays(merged.days);
+      saveEvents(merged.events);
+      saveNotes(merged.notes);
+      saveBuckets(merged.buckets);
+
+      if (payload.settings) {
+        const nextSettings = mergeLegacySettings(settings, payload.settings);
+        setSettings(nextSettings);
+        saveSettings(nextSettings);
+      }
+      if (payload.theme === 'light' || payload.theme === 'dark') {
+        setTheme(payload.theme);
+      }
+
+      if (sourceLabel === 'still-local') {
+        markMigratedFromStill();
+        const totalDays = Object.keys(merged.days).length;
+        session.showWhisper(
+          totalDays > 0
+            ? `Copied your Still history & settings (${totalDays} ${totalDays === 1 ? 'day' : 'days'}) · Still is untouched`
+            : 'Copied your settings & notes from Still · Still is untouched',
+          undefined,
+          5500
+        );
+      } else {
+        session.showWhisper(
+          merged.addedDays > 0
+            ? `Imported & merged ${merged.addedDays} new ${merged.addedDays === 1 ? 'day' : 'days'} (plus settings)`
+            : 'Backup & settings merged with your local history',
+          undefined,
+          4500
+        );
+      }
+    },
+    [buckets, days, events, notes, session, settings]
+  );
+
+  const handleMigrateFromStill = useCallback(() => {
+    const legacy = inspectLegacyStillData();
+    if (!legacy.found) {
+      session.showWhisper('No Still data found in this browser — try importing a JSON backup instead', undefined, 4500);
+      return;
+    }
+    applyIncomingBackup(readLegacyStillBackup(), 'still-local');
+  }, [applyIncomingBackup, session]);
+
+  // Automatic one-time safe read-only migration from Still when opened on the same browser
+  useEffect(() => {
+    if (legacyStill.found && !hasMigratedFromStill()) {
+      applyIncomingBackup(readLegacyStillBackup(), 'still-local');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleImportFile = useCallback(
     (file: File) => {
       const reader = new FileReader();
       reader.onload = () => {
         try {
           const parsed = JSON.parse(String(reader.result)) as StillBackupPayload;
-          const merged = mergeBackupPayload({ days, events, notes, buckets }, parsed);
-          setDays(merged.days);
-          setEvents(merged.events);
-          setNotes(merged.notes);
-          setBuckets(merged.buckets);
-          saveDays(merged.days);
-          saveEvents(merged.events);
-          saveNotes(merged.notes);
-          saveBuckets(merged.buckets);
-          session.showWhisper(
-            merged.addedDays > 0
-              ? `Imported & merged ${merged.addedDays} new ${merged.addedDays === 1 ? 'day' : 'days'} of history`
-              : 'Backup merged with your local history',
-            undefined,
-            4500
-          );
+          applyIncomingBackup(parsed, 'file');
         } catch {
           session.showWhisper('Could not read that JSON backup file', undefined, 4500);
         }
       };
       reader.readAsText(file);
     },
-    [buckets, days, events, notes, session]
+    [applyIncomingBackup, session]
   );
 
   const handleClearData = useCallback(() => {
@@ -906,6 +958,8 @@ export function App() {
             events={events}
             notes={notes}
             restlessnessThreshold={settings.restlessnessThreshold}
+            legacyStill={legacyStill}
+            onMigrateFromStill={handleMigrateFromStill}
             onExportData={handleExportData}
             onImportFile={handleImportFile}
             onCopiedDigest={() =>
@@ -939,6 +993,9 @@ export function App() {
             theme={theme}
             autoPipSupported={pip.autoPipSupported}
             availableCameras={session.availableCameras}
+            legacyStill={legacyStill}
+            onMigrateFromStill={handleMigrateFromStill}
+            onImportFile={handleImportFile}
             onUpdateSettings={updateSettings}
             onSelectCamera={handleSelectCamera}
             onToggleTheme={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}

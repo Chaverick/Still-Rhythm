@@ -8,6 +8,7 @@ import type {
   NoteEntry,
   PostureCalibration,
   StillSettings,
+  ThemeMode,
 } from '../types';
 
 const KEYS = {
@@ -18,7 +19,17 @@ const KEYS = {
   buckets: 'stillrhythm:buckets:v1',
   calibration: 'stillrhythm:calibration:v1',
   dismissedSummary: 'stillrhythm:dismissed-summary:v1',
+  migratedFromStill: 'stillrhythm:migrated-from-still:v1',
   theme: 'stillrhythm:theme',
+} as const;
+
+// Read-only keys from the original Still app (same origin: chaverick.github.io)
+const LEGACY_STILL_KEYS = {
+  settings: 'still:settings:v1',
+  days: 'still:days:v1',
+  events: 'still:events:v1',
+  notes: 'still:notes:v1',
+  theme: 'still:theme',
 } as const;
 
 export const COMPETING_RESPONSES: CompetingResponse[] = [
@@ -471,10 +482,12 @@ export function clearAllLocalData(): void {
 }
 
 export interface StillBackupPayload {
+  settings?: Partial<StillSettings>;
   days?: Record<string, Partial<DaySummary>>;
   events?: AwarenessEvent[];
   notes?: NoteEntry[];
   buckets?: Record<string, FiveMinBucket[]>;
+  theme?: ThemeMode;
 }
 
 export function mergeBackupPayload(
@@ -574,4 +587,133 @@ export function mergeBackupPayload(
     buckets: mergedBuckets,
     addedDays,
   };
+}
+
+export interface LegacyStillSummary {
+  found: boolean;
+  dayCount: number;
+  eventCount: number;
+  noteCount: number;
+  hasSettings: boolean;
+  userName: string;
+  totalCalmSeconds: number;
+}
+
+/**
+ * Safely merges classic Still settings into Still Rhythm settings without overwriting
+ * Still Rhythm-specific preferences (camera selection, desk mode, restlessness, sit/stand).
+ */
+export function mergeLegacySettings(
+  current: StillSettings,
+  incoming?: Partial<StillSettings>
+): StillSettings {
+  if (!incoming || typeof incoming !== 'object') return current;
+  const next: StillSettings = { ...current };
+  if (typeof incoming.userName === 'string' && incoming.userName.trim()) {
+    next.userName = incoming.userName;
+  }
+  if (typeof incoming.stage1Enabled === 'boolean') next.stage1Enabled = incoming.stage1Enabled;
+  if (typeof incoming.stage2Enabled === 'boolean') next.stage2Enabled = incoming.stage2Enabled;
+  if (typeof incoming.soundEnabled === 'boolean') next.soundEnabled = incoming.soundEnabled;
+  if (typeof incoming.stage2RepeatChime === 'boolean') {
+    next.stage2RepeatChime = incoming.stage2RepeatChime;
+  }
+  if (typeof incoming.autoPipOnTabSwitch === 'boolean') {
+    next.autoPipOnTabSwitch = incoming.autoPipOnTabSwitch;
+  }
+  if (typeof incoming.stage1DwellSec === 'number' && Number.isFinite(incoming.stage1DwellSec)) {
+    next.stage1DwellSec = incoming.stage1DwellSec;
+  }
+  if (typeof incoming.stage2DwellSec === 'number' && Number.isFinite(incoming.stage2DwellSec)) {
+    next.stage2DwellSec = incoming.stage2DwellSec;
+  }
+  if (typeof incoming.zoneScale === 'number' && Number.isFinite(incoming.zoneScale)) {
+    next.zoneScale = incoming.zoneScale;
+  }
+  if (Array.isArray(incoming.activeZones) && incoming.activeZones.length > 0) {
+    next.activeZones = incoming.activeZones;
+  }
+  if (typeof incoming.pinchFilterEnabled === 'boolean') {
+    next.pinchFilterEnabled = incoming.pinchFilterEnabled;
+  }
+  if (incoming.previewMode === 'silhouette' || incoming.previewMode === 'camera') {
+    next.previewMode = incoming.previewMode;
+  }
+  if (Array.isArray(incoming.pinnedResponses) && incoming.pinnedResponses.length > 0) {
+    next.pinnedResponses = incoming.pinnedResponses;
+  }
+  if (Array.isArray(incoming.checkedAnchors)) {
+    next.checkedAnchors = Array.from(new Set([...current.checkedAnchors, ...incoming.checkedAnchors]));
+  }
+  return next;
+}
+
+/**
+ * Strictly READ-ONLY check for personal data from the original Still app on the same browser origin.
+ * Never writes to or modifies any `still:*` key.
+ */
+export function inspectLegacyStillData(): LegacyStillSummary {
+  const legacyDays = readJson<Record<string, Partial<DaySummary>>>(LEGACY_STILL_KEYS.days, {});
+  const legacyEvents = readJson<AwarenessEvent[]>(LEGACY_STILL_KEYS.events, []);
+  const legacyNotes = readJson<NoteEntry[]>(LEGACY_STILL_KEYS.notes, []);
+  const legacySettings = readJson<Partial<StillSettings> | null>(LEGACY_STILL_KEYS.settings, null);
+
+  const validDays = Object.values(legacyDays).filter(
+    (d) =>
+      d &&
+      ((Number(d.calmSeconds) || 0) > 0 ||
+        (Number(d.urgesRedirected) || 0) > 0 ||
+        (Number(d.graceRecoveries) || 0) > 0)
+  );
+  const totalCalmSeconds = validDays.reduce((acc, d) => acc + (Number(d.calmSeconds) || 0), 0);
+  const hasSettings = Boolean(
+    legacySettings &&
+      (legacySettings.userName?.trim() ||
+        legacySettings.stage1DwellSec !== undefined ||
+        (Array.isArray(legacySettings.activeZones) && legacySettings.activeZones.length > 0))
+  );
+
+  const found =
+    validDays.length > 0 || legacyEvents.length > 0 || legacyNotes.length > 0 || hasSettings;
+
+  return {
+    found,
+    dayCount: validDays.length,
+    eventCount: legacyEvents.length,
+    noteCount: legacyNotes.length,
+    hasSettings,
+    userName: legacySettings?.userName?.trim() || '',
+    totalCalmSeconds,
+  };
+}
+
+export function readLegacyStillBackup(): StillBackupPayload {
+  const settings = readJson<Partial<StillSettings> | undefined>(LEGACY_STILL_KEYS.settings, undefined);
+  const days = readJson<Record<string, Partial<DaySummary>>>(LEGACY_STILL_KEYS.days, {});
+  const events = readJson<AwarenessEvent[]>(LEGACY_STILL_KEYS.events, []);
+  const notes = readJson<NoteEntry[]>(LEGACY_STILL_KEYS.notes, []);
+  let theme: ThemeMode | undefined;
+  try {
+    const t = localStorage.getItem(LEGACY_STILL_KEYS.theme);
+    if (t === 'light' || t === 'dark') theme = t;
+  } catch {
+    // ignore
+  }
+  return { settings, days, events, notes, theme };
+}
+
+export function hasMigratedFromStill(): boolean {
+  try {
+    return localStorage.getItem(KEYS.migratedFromStill) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function markMigratedFromStill(): void {
+  try {
+    localStorage.setItem(KEYS.migratedFromStill, '1');
+  } catch {
+    // ignore
+  }
 }

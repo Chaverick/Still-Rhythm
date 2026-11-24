@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { formatShortDuration, type LegacyStillSummary } from '../lib/storage';
 import type { CameraDeviceOption, StillSettings, ThemeMode } from '../types';
 
 interface SettingsViewProps {
@@ -5,6 +7,9 @@ interface SettingsViewProps {
   theme: ThemeMode;
   autoPipSupported: boolean;
   availableCameras: CameraDeviceOption[];
+  legacyStill: LegacyStillSummary;
+  onMigrateFromStill: () => void;
+  onImportFile: (file: File) => void;
   onUpdateSettings: (patch: Partial<StillSettings>) => void;
   onSelectCamera: (deviceId: string) => void;
   onToggleTheme: () => void;
@@ -17,6 +22,9 @@ export function SettingsView({
   theme,
   autoPipSupported,
   availableCameras,
+  legacyStill,
+  onMigrateFromStill,
+  onImportFile,
   onUpdateSettings,
   onSelectCamera,
   onToggleTheme,
@@ -24,6 +32,13 @@ export function SettingsView({
   onTestStage2,
 }: SettingsViewProps) {
   const trimmedName = settings.userName.trim();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onImportFile(file);
+    e.target.value = '';
+  };
 
   return (
     <div className="view-stack">
@@ -402,6 +417,65 @@ export function SettingsView({
             >
               <span className="switch-thumb" />
             </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Bring your personal data from the original Still app */}
+      <section className="editorial-section" aria-label="Migrate data from Still">
+        <div className="section-head-row">
+          <h2 className="section-heading">Bring your data from Still</h2>
+          <span className="section-meta">Read-only · Original Still stays untouched</span>
+        </div>
+
+        <div className="settings-card">
+          {legacyStill.found ? (
+            <p className="settings-explainer">
+              <strong>Found your Still data in this browser:</strong>{' '}
+              {legacyStill.dayCount} {legacyStill.dayCount === 1 ? 'day' : 'days'} of history
+              {legacyStill.totalCalmSeconds > 0
+                ? ` (${formatShortDuration(legacyStill.totalCalmSeconds)} calm time)`
+                : ''}
+              {legacyStill.noteCount > 0
+                ? `, ${legacyStill.noteCount} ${legacyStill.noteCount === 1 ? 'note' : 'notes'}`
+                : ''}
+              {legacyStill.hasSettings ? ', plus your Still settings' : ''}. Still Rhythm copies this
+              over automatically on first open, and you can safely re-sync anytime.
+            </p>
+          ) : (
+            <p className="settings-explainer">
+              Because Still keeps all your data privately inside each browser (with zero cloud
+              servers), if you used Still on another device or browser, export a JSON backup from
+              Still&rsquo;s <strong>Progress</strong> tab and import it below.
+            </p>
+          )}
+
+          <div className="welcome-actions">
+            {legacyStill.found && (
+              <button
+                type="button"
+                id="btn-settings-migrate-still"
+                className="btn btn-primary btn-sm"
+                onClick={onMigrateFromStill}
+              >
+                Copy &amp; merge from Still
+              </button>
+            )}
+            <button
+              type="button"
+              id="btn-settings-import-json"
+              className="btn btn-subtle btn-sm"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Import Still JSON from another device
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              onChange={handleImportChange}
+            />
           </div>
         </div>
       </section>

@@ -11,6 +11,7 @@ import {
   getLocalDateKey,
   totalFaceTouches,
   totalReliefMoves,
+  type LegacyStillSummary,
 } from '../lib/storage';
 import type { AwarenessEvent, DaySummary, FiveMinBucket, NoteEntry } from '../types';
 
@@ -22,6 +23,8 @@ interface PatternsViewProps {
   events: AwarenessEvent[];
   notes: NoteEntry[];
   restlessnessThreshold: number;
+  legacyStill: LegacyStillSummary;
+  onMigrateFromStill: () => void;
   onExportData: () => void;
   onImportFile: (file: File) => void;
   onCopiedDigest: () => void;
@@ -72,6 +75,8 @@ export function PatternsView({
   events,
   notes,
   restlessnessThreshold,
+  legacyStill,
+  onMigrateFromStill,
   onExportData,
   onImportFile,
   onCopiedDigest,
@@ -842,16 +847,27 @@ export function PatternsView({
         </div>
       </section>
 
-      {/* Portable Local Backup */}
-      <section className="portable-sync-box" aria-label="Move history between computers">
+      {/* Portable Local Backup & Still Migration */}
+      <section className="portable-sync-box" aria-label="Move history between apps or computers">
         <div className="portable-sync-copy">
-          <h3 className="portable-sync-title">Using Still Rhythm on another computer?</h3>
+          <h3 className="portable-sync-title">Bring history from Still or another computer</h3>
           <p className="portable-sync-desc">
-            Everything stays 100% locally in your browser with zero cloud servers. Export a JSON
-            backup anytime to keep a copy or merge your history across devices.
+            Everything stays 100% locally in your browser with zero cloud servers. Import any JSON
+            backup from <strong>Still</strong> or <strong>Still Rhythm</strong> to merge your
+            history and settings safely.
           </p>
         </div>
         <div className="portable-sync-actions">
+          {legacyStill.found && (
+            <button
+              type="button"
+              id="btn-progress-migrate-still"
+              className="btn btn-primary btn-sm"
+              onClick={onMigrateFromStill}
+            >
+              Copy from Still
+            </button>
+          )}
           <button
             type="button"
             id="btn-progress-export"
