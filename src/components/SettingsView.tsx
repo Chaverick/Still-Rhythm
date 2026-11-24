@@ -68,7 +68,7 @@ export function SettingsView({
               value={settings.selectedCameraId}
               onChange={(e) => onSelectCamera(e.target.value)}
             >
-              <option value="">Automatic (system default)</option>
+              <option value="">Automatic (pick camera in front of your face)</option>
               {availableCameras.map((cam) => (
                 <option key={cam.deviceId} value={cam.deviceId}>
                   {cam.label}
@@ -76,8 +76,9 @@ export function SettingsView({
               ))}
             </select>
             <p className="settings-preview-note">
-              If your external Logitech camera is unplugged (like in a meeting room or on your bed),
-              Still Rhythm automatically falls back to your laptop camera.
+              On <strong>Automatic</strong>, when multiple cameras are plugged in (like your
+              MacBook camera on the side and a Logitech webcam on your monitor), Still Rhythm checks
+              each camera and chooses the one straight in front of your face.
             </p>
           </div>
 

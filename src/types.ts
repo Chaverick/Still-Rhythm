@@ -226,6 +226,7 @@ export type EngineStatus =
   | 'idle'
   | 'requesting-camera'
   | 'loading-models'
+  | 'choosing-camera'
   | 'running'
   | 'error';
 

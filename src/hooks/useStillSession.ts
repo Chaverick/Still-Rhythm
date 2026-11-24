@@ -580,7 +580,8 @@ export function useStillSession({
       if (
         runningRef.current ||
         status === 'requesting-camera' ||
-        status === 'loading-models'
+        status === 'loading-models' ||
+        status === 'choosing-camera'
       ) {
         return;
       }
@@ -619,11 +620,62 @@ export function useStillSession({
         audio: false,
       });
 
+      const stopStreamQuietly = (s: MediaStream | null) => {
+        if (!s) return;
+        for (const t of s.getTracks()) {
+          try {
+            t.stop();
+          } catch {
+            // ignore
+          }
+        }
+      };
+
+      const attachAndWaitForFrame = async (
+        vid: HTMLVideoElement,
+        s: MediaStream,
+        timeoutMs = 1000
+      ): Promise<boolean> => {
+        vid.srcObject = s;
+        vid.muted = true;
+        vid.playsInline = true;
+        try {
+          await vid.play();
+        } catch {
+          // ignore autoplay race; check readyState loop below
+        }
+        const start = performance.now();
+        while (performance.now() - start < timeoutMs) {
+          if (vid.readyState >= 2 && vid.videoWidth > 0 && vid.videoHeight > 0) {
+            return true;
+          }
+          await new Promise((r) => window.setTimeout(r, 60));
+        }
+        return vid.readyState >= 2 && vid.videoWidth > 0;
+      };
+
+      const scoreVideoFrontFacing = async (
+        eng: LocalVisionEngine,
+        vid: HTMLVideoElement
+      ): Promise<{ faceFound: boolean; frontScore: number; sideAngle: boolean }> => {
+        let best = { faceFound: false, frontScore: -1, sideAngle: true };
+        for (let i = 0; i < 3; i++) {
+          const res = eng.evaluateFrontFacingScore(vid, performance.now());
+          if (res.faceFound && res.frontScore > best.frontScore) {
+            best = { faceFound: true, frontScore: res.frontScore, sideAngle: res.sideAngle };
+          }
+          if (i < 2) {
+            await new Promise((r) => window.setTimeout(r, 95));
+          }
+        }
+        return best;
+      };
+
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia(buildConstraints(desiredDeviceId));
       } catch (err) {
-        // If their external Logitech camera is unplugged (e.g. in a meeting room or on bed), fall back smoothly to laptop webcam!
+        // If their external Logitech camera is unplugged (e.g. in a meeting room or on bed), fall back smoothly to laptop webcam
         if (desiredDeviceId) {
           try {
             stream = await navigator.mediaDevices.getUserMedia(buildConstraints(''));
@@ -647,8 +699,105 @@ export function useStillSession({
         }
       }
 
-      // Now that permission is granted, refresh labeled camera list (e.g. Logitech vs FaceTime/Built-in)
+      // Now that permission is granted, refresh labeled camera list (e.g. Logitech vs MacBook FaceTime)
       void refreshCameras();
+
+      const video = videoRef.current;
+      if (video) {
+        await attachAndWaitForFrame(video, stream, 1500);
+      }
+
+      void wakeLockRef.current?.enable();
+
+      setStatus('loading-models');
+      try {
+        if (!engineRef.current) {
+          engineRef.current = new LocalVisionEngine();
+        }
+        const delegate = await engineRef.current.init();
+        const cached = await checkModelsCached();
+        setDiagnostics((d) => ({
+          ...d,
+          delegate,
+          modelsCached: cached,
+        }));
+      } catch (err) {
+        stopStreamQuietly(stream);
+        stopCameraTracks();
+        void wakeLockRef.current?.disable();
+        setStatus('error');
+        setErrorMessage(
+          err instanceof Error
+            ? `Local vision models could not initialize: ${err.message}`
+            : 'Local vision models could not initialize in this browser.'
+        );
+        return;
+      }
+
+      // Automatic front-facing camera selection:
+      // When in Automatic mode and 2+ cameras are connected (e.g. side MacBook + front Logitech),
+      // inspect each camera briefly and choose the one most directly in front of the user's face!
+      let autoPickedNotice: string | null = null;
+      if (!desiredDeviceId && video && engineRef.current && navigator.mediaDevices?.enumerateDevices) {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const allCams = devices.filter((d) => d.kind === 'videoinput' && d.deviceId);
+          const isVirtualOrDesk = (label: string) =>
+            /desk view|virtual|obs|snap camera|ndi|mmhmm|loom/i.test(label);
+          const physicalCams = allCams.filter((c) => !isVirtualOrDesk(c.label || ''));
+          const candidates = (physicalCams.length > 0 ? physicalCams : allCams).slice(0, 4);
+
+          if (candidates.length >= 2) {
+            setStatus('choosing-camera');
+            const initialTrack = stream.getVideoTracks()[0];
+            const initialDeviceId = initialTrack?.getSettings?.().deviceId || '';
+            const initialLabel = initialTrack?.label || 'Camera 1';
+
+            // 1. Score the already-open stream first
+            const initialEval = await scoreVideoFrontFacing(engineRef.current, video);
+            let bestStream: MediaStream = stream;
+            let bestScore = initialEval.faceFound ? initialEval.frontScore : -1;
+            let bestLabel = initialLabel;
+
+            // 2. Probe each remaining candidate camera briefly
+            for (const cam of candidates) {
+              if (cam.deviceId === initialDeviceId) continue;
+              let probeStream: MediaStream | null = null;
+              try {
+                probeStream = await navigator.mediaDevices.getUserMedia(
+                  buildConstraints(cam.deviceId)
+                );
+                const ready = await attachAndWaitForFrame(video, probeStream, 900);
+                if (ready) {
+                  const evalRes = await scoreVideoFrontFacing(engineRef.current, video);
+                  const score = evalRes.faceFound ? evalRes.frontScore : -1;
+                  if (score > bestScore + 2) {
+                    stopStreamQuietly(bestStream);
+                    bestStream = probeStream;
+                    bestScore = score;
+                    bestLabel = probeStream.getVideoTracks()[0]?.label || cam.label || 'Front camera';
+                    probeStream = null; // keep open as winner
+                  }
+                }
+              } catch {
+                // Skip cameras that cannot be opened (e.g. busy or sleeping Continuity Camera)
+              } finally {
+                if (probeStream) {
+                  stopStreamQuietly(probeStream);
+                }
+              }
+            }
+
+            stream = bestStream;
+            await attachAndWaitForFrame(video, stream, 900);
+            if (bestScore >= 0) {
+              autoPickedNotice = `Using ${bestLabel} · best front view of ${candidates.length} cameras`;
+            }
+          }
+        } catch {
+          // If enumeration/probing fails, proceed gracefully with the open stream
+        }
+      }
 
       streamRef.current = stream;
       const videoTrack = stream.getVideoTracks()[0];
@@ -671,11 +820,7 @@ export function useStillSession({
         };
       }
 
-      const video = videoRef.current;
       if (video) {
-        video.srcObject = stream;
-        video.muted = true;
-        video.playsInline = true;
         video.onpause = () => {
           if (runningRef.current) {
             window.setTimeout(() => {
@@ -685,45 +830,9 @@ export function useStillSession({
             }, 60);
           }
         };
-        try {
-          await video.play();
-        } catch {
-          await new Promise<void>((resolve) => {
-            const onMeta = () => {
-              video.removeEventListener('loadedmetadata', onMeta);
-              video.play().catch(() => {}).finally(resolve);
-            };
-            video.addEventListener('loadedmetadata', onMeta);
-          });
-        }
       }
 
-      void wakeLockRef.current?.enable();
-
-      setStatus('loading-models');
-      try {
-        if (!engineRef.current) {
-          engineRef.current = new LocalVisionEngine();
-        }
-        const delegate = await engineRef.current.init();
-        const cached = await checkModelsCached();
-        setDiagnostics((d) => ({
-          ...d,
-          delegate,
-          modelsCached: cached,
-        }));
-      } catch (err) {
-        stopCameraTracks();
-        void wakeLockRef.current?.disable();
-        setStatus('error');
-        setErrorMessage(
-          err instanceof Error
-            ? `Local vision models could not initialize: ${err.message}`
-            : 'Local vision models could not initialize in this browser.'
-        );
-        return;
-      }
-
+      engineRef.current?.resetCache();
       runningRef.current = true;
       lastDetectMsRef.current = 0;
       lastVideoTimeRef.current = -1;
@@ -737,6 +846,10 @@ export function useStillSession({
       setStatus('running');
       rafRef.current = requestAnimationFrame(runLoop);
 
+      if (autoPickedNotice) {
+        showWhisper(autoPickedNotice, undefined, 5000);
+      }
+
       if (video && typeof video.requestVideoFrameCallback === 'function') {
         const onVideoFrame = () => {
           if (!runningRef.current) return;
@@ -747,10 +860,10 @@ export function useStillSession({
         rvfcRef.current = video.requestVideoFrameCallback(onVideoFrame);
       }
     },
-    [refreshCameras, resetDwellState, runLoop, status, stepDetection, stopCameraTracks]
+    [refreshCameras, resetDwellState, runLoop, showWhisper, status, stepDetection, stopCameraTracks]
   );
 
-  // Switch cameras seamlessly if user picks Logitech vs Laptop while already running
+  // Switch cameras seamlessly (or pass '' to re-scan all cameras and pick the front-facing one)
   const switchCamera = useCallback(
     async (deviceId: string) => {
       if (!runningRef.current) return;

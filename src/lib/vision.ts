@@ -876,6 +876,86 @@ export class LocalVisionEngine {
     };
   }
 
+  /**
+   * Evaluates how directly front-facing and centered the user's face appears in a candidate camera.
+   * Used when multiple cameras exist (e.g. side MacBook webcam + front Logitech desk webcam)
+   * to automatically pick the camera directly in front of the user's face.
+   */
+  evaluateFrontFacingScore(
+    video: HTMLVideoElement,
+    nowMs: number = performance.now()
+  ): {
+    faceFound: boolean;
+    frontScore: number;
+    yawSymmetry: number;
+    sideAngle: boolean;
+  } {
+    if (!this.faceLandmarker) {
+      return { faceFound: false, frontScore: -1, yawSymmetry: 0, sideAngle: true };
+    }
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+      return { faceFound: false, frontScore: -1, yawSymmetry: 0, sideAngle: true };
+    }
+
+    const ts = Math.max(Math.round(nowMs), this.lastVideoTs + 1);
+    this.lastVideoTs = ts;
+
+    let faceResult;
+    try {
+      faceResult = this.faceLandmarker.detectForVideo(video, ts);
+    } catch {
+      return { faceFound: false, frontScore: -1, yawSymmetry: 0, sideAngle: true };
+    }
+
+    const lms = faceResult.faceLandmarks?.[0];
+    if (!lms || lms.length <= 455) {
+      return { faceFound: false, frontScore: -1, yawSymmetry: 0, sideAngle: true };
+    }
+
+    const aspect = video.videoWidth / video.videoHeight;
+    const leftOuter = lms[OUTER_EYE_LEFT_IMG];
+    const rightOuter = lms[OUTER_EYE_RIGHT_IMG];
+    const foreheadTop = lms[FOREHEAD_TOP];
+    const chinBottom = lms[CHIN_BOTTOM];
+    const noseTip = lms[1] ?? lms[NOSE_BRIDGE];
+    const rightEdge = lms[234]; // image-left edge of face
+    const leftEdge = lms[454]; // image-right edge of face
+
+    const rawEyeSpan = distIso(leftOuter, rightOuter, aspect);
+    const faceHeight = Math.max(0.05, distIso(foreheadTop, chinBottom, aspect));
+    const heightEquivSpan = faceHeight * 0.68;
+    const frontRatio = Math.min(1.05, rawEyeSpan / Math.max(0.04, heightEquivSpan));
+    const sideAngle = rawEyeSpan / Math.max(0.04, heightEquivSpan) < 0.82;
+
+    // Nose-to-face-edge horizontal symmetry: 1.0 when looking straight at camera, drops sharply at side angles
+    const distToLeftImg = Math.abs(noseTip.x - rightEdge.x);
+    const distToRightImg = Math.abs(leftEdge.x - noseTip.x);
+    const yawSymmetry = Math.max(
+      0,
+      1 - Math.abs(distToLeftImg - distToRightImg) / Math.max(0.01, distToLeftImg + distToRightImg)
+    );
+
+    // Centering bonus (camera straight in front of you keeps your face near the center)
+    const centerOffset = Math.hypot(noseTip.x - 0.5, noseTip.y - 0.46);
+    const centerScore = Math.max(0, 1 - centerOffset * 1.45);
+
+    // Clear visible face size bonus (sweet spot 0.10..0.38 eyeSpan)
+    const sizeScore =
+      rawEyeSpan >= 0.09 && rawEyeSpan <= 0.42
+        ? 1
+        : Math.max(0.2, 1 - Math.abs(rawEyeSpan - 0.22) * 2.2);
+
+    const frontScore =
+      yawSymmetry * 52 + frontRatio * 28 + centerScore * 14 + sizeScore * 6;
+
+    return {
+      faceFound: true,
+      frontScore: Math.round(frontScore * 10) / 10,
+      yawSymmetry: Math.round(yawSymmetry * 100) / 100,
+      sideAngle,
+    };
+  }
+
   resetCache(): void {
     this.cachedFace = null;
     this.cachedPose = null;

@@ -131,13 +131,17 @@ export function TodayView({
   const [inlinePacerOpen, setInlinePacerOpen] = useState(false);
 
   const isRunning = status === 'running';
-  const isBusy = status === 'requesting-camera' || status === 'loading-models';
+  const isBusy =
+    status === 'requesting-camera' ||
+    status === 'loading-models' ||
+    status === 'choosing-camera';
   const pipActive = pipKind !== 'none';
   const name = settings.userName.trim();
 
   const headline = (() => {
     if (status === 'requesting-camera') return 'Opening your camera locally.';
     if (status === 'loading-models') return 'Preparing on-device awareness.';
+    if (status === 'choosing-camera') return 'Finding the camera in front of your face.';
     if (status === 'running') {
       if (frameGeometry?.handInZone) {
         return name
@@ -165,6 +169,9 @@ export function TodayView({
     }
     if (status === 'loading-models') {
       return 'Loading bundled face, hand, and upper-body models from local storage.';
+    }
+    if (status === 'choosing-camera') {
+      return 'Checking your connected cameras to pick the clearest straight-on view of your face.';
     }
     if (status === 'running') {
       if (pipActive) {
@@ -305,7 +312,9 @@ export function TodayView({
                 ? 'Requesting camera…'
                 : status === 'loading-models'
                   ? 'Loading local models…'
-                  : 'Begin session'}
+                  : status === 'choosing-camera'
+                    ? 'Finding front camera…'
+                    : 'Begin session'}
             </button>
           ) : (
             <button

@@ -309,19 +309,30 @@ export function CalibrationDrawer({
 
       {expanded && (
         <div className="calibration-body">
-          {/* Camera Selector (Logitech desk webcam vs Built-in laptop camera) */}
+          {/* Camera Selector (Automatic front-facing vs manual pick) */}
           {availableCameras.length > 0 && (
             <div className="camera-picker-row">
-              <label htmlFor="select-camera-drawer" className="slider-label">
-                Active camera
-              </label>
+              <div className="slider-head">
+                <label htmlFor="select-camera-drawer" className="slider-label">
+                  Active camera
+                </label>
+                {availableCameras.length >= 2 && sessionRunning && (
+                  <button
+                    type="button"
+                    className="text-link-btn"
+                    onClick={() => onSelectCamera('')}
+                  >
+                    Re-scan front camera
+                  </button>
+                )}
+              </div>
               <select
                 id="select-camera-drawer"
                 className="editorial-select"
                 value={settings.selectedCameraId}
                 onChange={(e) => onSelectCamera(e.target.value)}
               >
-                <option value="">Automatic (system default)</option>
+                <option value="">Automatic (pick camera in front of your face)</option>
                 {availableCameras.map((cam) => (
                   <option key={cam.deviceId} value={cam.deviceId}>
                     {cam.label}
