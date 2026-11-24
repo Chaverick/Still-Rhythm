@@ -6,6 +6,7 @@ interface SettingsViewProps {
   settings: StillSettings;
   theme: ThemeMode;
   autoPipSupported: boolean;
+  autoPipPermission: 'granted' | 'prompt' | 'denied' | 'unknown';
   availableCameras: CameraDeviceOption[];
   legacyStill: LegacyStillSummary;
   onMigrateFromStill: () => void;
@@ -21,6 +22,7 @@ export function SettingsView({
   settings,
   theme,
   autoPipSupported,
+  autoPipPermission,
   availableCameras,
   legacyStill,
   onMigrateFromStill,
@@ -400,9 +402,11 @@ export function SettingsView({
             <div className="toggle-copy">
               <div className="toggle-title">Auto-float when switching tabs</div>
               <p className="toggle-desc">
-                {autoPipSupported
-                  ? 'Supported in this browser: when a session is running and you switch tabs, Still Rhythm pops out automatically.'
-                  : 'Supported automatically on Desktop Chrome & Edge. In other browsers, click "Float mini-window" directly.'}
+                {autoPipPermission === 'denied'
+                  ? 'Currently blocked in Chrome site settings. Click the tune icon left of the address bar and allow "Automatic picture-in-picture".'
+                  : autoPipSupported
+                    ? 'When a session is running and you switch browser tabs, Still Rhythm pops out automatically. To stay on top of other desktop apps (like Slack or Notes), click "Float mini-window" once.'
+                    : 'Supported automatically on Desktop Chrome & Edge. In other browsers, click "Float mini-window" directly.'}
               </p>
             </div>
             <button

@@ -43,6 +43,8 @@ export interface PipCanvasState {
   restlessnessLevel: RestlessnessLevel;
 }
 
+export type AutoPipPermissionState = 'granted' | 'prompt' | 'denied' | 'unknown';
+
 export function usePictureInPicture(
   canvasState: PipCanvasState,
   cameraVideoRef?: React.RefObject<HTMLVideoElement | null>
@@ -52,11 +54,13 @@ export function usePictureInPicture(
   const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null);
   const [pipError, setPipError] = useState<string | null>(null);
   const [autoPipSupported, setAutoPipSupported] = useState(false);
+  const [autoPipPermission, setAutoPipPermission] = useState<AutoPipPermissionState>('unknown');
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const activePipVideoElRef = useRef<WebKitVideoElement | null>(null);
+  const openingRef = useRef(false);
   const stateRef = useRef(canvasState);
   stateRef.current = canvasState;
 
@@ -432,108 +436,132 @@ export function usePictureInPicture(
     setPipKind('none');
   }, [pipWindow]);
 
-  const openPiP = useCallback(async () => {
-    setPipError(null);
+  const openPiP = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = Boolean(opts?.silent);
+      if (openingRef.current) return;
 
-    const docPiP = (window as unknown as { documentPictureInPicture?: DocumentPiPApi })
-      .documentPictureInPicture;
+      const docPiP = (window as unknown as { documentPictureInPicture?: DocumentPiPApi })
+        .documentPictureInPicture;
 
-    if (docPiP?.requestWindow) {
+      // Avoid close-and-reopen flicker if Document PiP window is already open
+      if (docPiP?.window && !docPiP.window.closed) {
+        return;
+      }
+
+      openingRef.current = true;
+      if (!silent) {
+        setPipError(null);
+      }
+
       try {
-        const win = await docPiP.requestWindow({ width: 356, height: 356 });
-        win.document.documentElement.setAttribute('data-theme', stateRef.current.theme);
-        win.document.title = 'Still Rhythm · Floating';
-
-        for (const sheet of Array.from(document.styleSheets)) {
+        if (docPiP?.requestWindow) {
           try {
-            if (sheet.href) {
-              const link = win.document.createElement('link');
-              link.rel = 'stylesheet';
-              link.href = sheet.href;
-              win.document.head.appendChild(link);
-            } else if (sheet.cssRules) {
-              const style = win.document.createElement('style');
-              style.textContent = Array.from(sheet.cssRules)
-                .map((r) => r.cssText)
-                .join('\n');
-              win.document.head.appendChild(style);
+            const win = await docPiP.requestWindow({ width: 356, height: 356 });
+            win.document.documentElement.setAttribute('data-theme', stateRef.current.theme);
+            win.document.title = 'Still Rhythm · Floating';
+
+            for (const sheet of Array.from(document.styleSheets)) {
+              try {
+                if (sheet.href) {
+                  const link = win.document.createElement('link');
+                  link.rel = 'stylesheet';
+                  link.href = sheet.href;
+                  win.document.head.appendChild(link);
+                } else if (sheet.cssRules) {
+                  const style = win.document.createElement('style');
+                  style.textContent = Array.from(sheet.cssRules)
+                    .map((r) => r.cssText)
+                    .join('\n');
+                  win.document.head.appendChild(style);
+                }
+              } catch {
+                if (sheet.href) {
+                  const link = win.document.createElement('link');
+                  link.rel = 'stylesheet';
+                  link.href = sheet.href;
+                  win.document.head.appendChild(link);
+                }
+              }
             }
+
+            const root = win.document.createElement('div');
+            root.className = 'pip-doc-root';
+            win.document.body.innerHTML = '';
+            win.document.body.appendChild(root);
+
+            win.addEventListener('pagehide', () => {
+              setPipWindow(null);
+              setPipContainer(null);
+              setPipKind('none');
+            });
+
+            setPipWindow(win);
+            setPipContainer(root);
+            setPipKind('document');
+            return;
           } catch {
-            if (sheet.href) {
-              const link = win.document.createElement('link');
-              link.rel = 'stylesheet';
-              link.href = sheet.href;
-              win.document.head.appendChild(link);
+            if (silent) return;
+            // Fall through to Video PiP
+          }
+        }
+
+        const pipVideo = pipVideoRef.current as WebKitVideoElement | null;
+        if (pipVideo) {
+          primeCanvasVideo();
+
+          if (pipVideo.readyState >= 1) {
+            pipVideo.muted = false;
+            pipVideo.volume = 1;
+            const res = await tryEnterVideoPiPSync(pipVideo);
+            if (res.ok) {
+              setVideoPiPAudioActive(true);
+              setPipKind('video');
+              const nudgeCamera = () => {
+                const cam = cameraVideoRef?.current;
+                if (cam && cam.paused && cam.srcObject) {
+                  cam.play().catch(() => {});
+                }
+              };
+              window.setTimeout(nudgeCamera, 60);
+              window.setTimeout(nudgeCamera, 300);
+              return;
+            } else {
+              pipVideo.muted = true;
+              setVideoPiPAudioActive(false);
             }
           }
         }
 
-        const root = win.document.createElement('div');
-        root.className = 'pip-doc-root';
-        win.document.body.innerHTML = '';
-        win.document.body.appendChild(root);
-
-        win.addEventListener('pagehide', () => {
-          setPipWindow(null);
-          setPipContainer(null);
-          setPipKind('none');
-        });
-
-        setPipWindow(win);
-        setPipContainer(root);
-        setPipKind('document');
-        return;
-      } catch {
-        // Fall through to Video PiP
-      }
-    }
-
-    const pipVideo = pipVideoRef.current as WebKitVideoElement | null;
-    if (pipVideo) {
-      primeCanvasVideo();
-
-      if (pipVideo.readyState >= 1) {
-        pipVideo.muted = false;
-        pipVideo.volume = 1;
-        const res = await tryEnterVideoPiPSync(pipVideo);
-        if (res.ok) {
-          setVideoPiPAudioActive(true);
-          setPipKind('video');
-          const nudgeCamera = () => {
-            const cam = cameraVideoRef?.current;
-            if (cam && cam.paused && cam.srcObject) {
-              cam.play().catch(() => {});
-            }
-          };
-          window.setTimeout(nudgeCamera, 60);
-          window.setTimeout(nudgeCamera, 300);
-          return;
-        } else {
-          pipVideo.muted = true;
-          setVideoPiPAudioActive(false);
+        const camVideo = cameraVideoRef?.current as WebKitVideoElement | null;
+        if (camVideo && camVideo.readyState >= 1 && camVideo.srcObject) {
+          const camRes = await tryEnterVideoPiPSync(camVideo);
+          if (camRes.ok) {
+            setPipKind('video');
+            return;
+          }
         }
+
+        if (silent) return;
+
+        if (pipVideo && pipVideo.readyState === 0) {
+          primeCanvasVideo();
+          setPipError('Mini-window is warmed up — click "Float mini-window" once more to pop it out.');
+          return;
+        }
+
+        setPipError(
+          'This browser blocked floating mini-window mode. Desktop Chrome and Edge support it best.'
+        );
+      } finally {
+        openingRef.current = false;
       }
-    }
+    },
+    [cameraVideoRef, primeCanvasVideo, tryEnterVideoPiPSync]
+  );
 
-    const camVideo = cameraVideoRef?.current as WebKitVideoElement | null;
-    if (camVideo && camVideo.readyState >= 1 && camVideo.srcObject) {
-      const camRes = await tryEnterVideoPiPSync(camVideo);
-      if (camRes.ok) {
-        setPipKind('video');
-        return;
-      }
-    }
-
-    if (pipVideo && pipVideo.readyState === 0) {
-      primeCanvasVideo();
-      setPipError('Mini-window is warmed up — click "Float mini-window" once more to pop it out.');
-      return;
-    }
-
-    setPipError(
-      'This browser blocked floating mini-window mode. Desktop Chrome and Edge support it best.'
-    );
-  }, [cameraVideoRef, primeCanvasVideo, tryEnterVideoPiPSync]);
+  const openPiPRef = useRef(openPiP);
+  openPiPRef.current = openPiP;
 
   const togglePiP = useCallback(async () => {
     if (pipKind !== 'none') {
@@ -543,6 +571,47 @@ export function usePictureInPicture(
     }
   }, [closePiP, openPiP, pipKind]);
 
+  // Query Chrome's per-site "Automatic picture-in-picture" permission if supported
+  useEffect(() => {
+    let active = true;
+    let statusObj: PermissionStatus | null = null;
+
+    const queryPerm = async () => {
+      try {
+        if (!navigator.permissions?.query) return;
+        const result = await navigator.permissions.query({
+          name: 'automatic-picture-in-picture' as PermissionName,
+        });
+        if (!active) return;
+        statusObj = result;
+        setAutoPipPermission(result.state as AutoPipPermissionState);
+        result.onchange = () => {
+          if (active) {
+            setAutoPipPermission(result.state as AutoPipPermissionState);
+          }
+        };
+      } catch {
+        // Browser does not expose the automatic-picture-in-picture permission query
+      }
+    };
+
+    void queryPerm();
+    return () => {
+      active = false;
+      if (statusObj) {
+        statusObj.onchange = null;
+      }
+    };
+  }, []);
+
+  // Register MediaSession 'enterpictureinpicture' as soon as the session starts (including while
+  // models warm up or front-facing cameras are scanned) and keep it stable across PiP state changes.
+  const isSessionActive =
+    canvasState.status === 'requesting-camera' ||
+    canvasState.status === 'loading-models' ||
+    canvasState.status === 'choosing-camera' ||
+    canvasState.status === 'running';
+
   useEffect(() => {
     const ms = typeof navigator !== 'undefined' ? navigator.mediaSession : undefined;
     if (!ms || typeof ms.setActionHandler !== 'function') {
@@ -550,12 +619,34 @@ export function usePictureInPicture(
       return;
     }
 
-    const canRegister = canvasState.status === 'running' && canvasState.autoPipOnTabSwitch;
+    const msExtended = ms as MediaSession & {
+      setCameraActive?: (active: boolean) => void;
+    };
+
+    const canRegister = isSessionActive && canvasState.autoPipOnTabSwitch;
+
+    try {
+      if (isSessionActive) {
+        ms.playbackState = 'playing';
+        if (typeof MediaMetadata !== 'undefined') {
+          ms.metadata = new MediaMetadata({
+            title: 'Still Rhythm',
+            artist: 'Watching gently · 100% local',
+          });
+        }
+        msExtended.setCameraActive?.(true);
+      } else {
+        ms.playbackState = 'none';
+        msExtended.setCameraActive?.(false);
+      }
+    } catch {
+      // ignore optional MediaSession metadata/camera hooks
+    }
 
     try {
       if (canRegister) {
         ms.setActionHandler('enterpictureinpicture' as MediaSessionAction, () => {
-          void openPiP();
+          void openPiPRef.current({ silent: true });
         });
         setAutoPipSupported(true);
       } else {
@@ -569,11 +660,32 @@ export function usePictureInPicture(
     return () => {
       try {
         ms.setActionHandler('enterpictureinpicture' as MediaSessionAction, null);
+        ms.playbackState = 'none';
+        msExtended.setCameraActive?.(false);
       } catch {
         // ignore
       }
     };
-  }, [canvasState.status, canvasState.autoPipOnTabSwitch, openPiP]);
+  }, [isSessionActive, canvasState.autoPipOnTabSwitch]);
+
+  // Bonus: if the user clicks into another desktop app within Chrome's brief user-activation window
+  // right after interacting with a running session, pop out the floating mini-window automatically.
+  useEffect(() => {
+    if (canvasState.status !== 'running' || !canvasState.autoPipOnTabSwitch || pipKind !== 'none') {
+      return;
+    }
+
+    const onWindowBlur = () => {
+      if (document.visibilityState !== 'visible') return;
+      const ua = (navigator as Navigator & { userActivation?: { isActive: boolean } })
+        .userActivation;
+      if (!ua?.isActive) return;
+      void openPiPRef.current({ silent: true });
+    };
+
+    window.addEventListener('blur', onWindowBlur);
+    return () => window.removeEventListener('blur', onWindowBlur);
+  }, [canvasState.status, canvasState.autoPipOnTabSwitch, pipKind]);
 
   useEffect(() => {
     return () => {
@@ -591,6 +703,7 @@ export function usePictureInPicture(
     pipError,
     isSupported,
     autoPipSupported,
+    autoPipPermission,
     canvasRef,
     pipVideoRef,
     primeCanvasVideo,

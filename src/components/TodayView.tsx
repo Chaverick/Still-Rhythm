@@ -55,6 +55,7 @@ interface TodayViewProps {
   onOpenSettings: () => void;
   pipSupported: boolean;
   autoPipSupported: boolean;
+  autoPipPermission: 'granted' | 'prompt' | 'denied' | 'unknown';
   pipKind: PiPKind;
   pipError: string | null;
   onTogglePiP: () => void;
@@ -105,6 +106,7 @@ export function TodayView({
   onOpenSettings,
   pipSupported,
   autoPipSupported,
+  autoPipPermission,
   pipKind,
   pipError,
   onTogglePiP,
@@ -378,11 +380,20 @@ export function TodayView({
 
         {pipSupported && (
           <p className="pip-helper-line">
-            <strong>Mini-window</strong> floats a calm card in the corner while you work in other
-            tabs
-            {autoPipSupported && settings.autoPipOnTabSwitch
-              ? ' — and pops out automatically when you switch tabs.'
-              : '.'}
+            {autoPipPermission === 'denied' ? (
+              <>
+                <strong>Auto-float is blocked in browser settings</strong> — click the site controls
+                icon left of the address bar to allow Automatic picture-in-picture, or click{' '}
+                <strong>Float mini-window</strong> above.
+              </>
+            ) : (
+              <>
+                <strong>Mini-window</strong> pops out automatically when you switch browser tabs
+                {autoPipSupported && settings.autoPipOnTabSwitch
+                  ? ' — click Float mini-window once to keep it floating over other Mac apps too.'
+                  : '. Click Float mini-window to keep it floating over other apps.'}
+              </>
+            )}
           </p>
         )}
 

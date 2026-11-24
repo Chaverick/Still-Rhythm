@@ -924,6 +924,7 @@ export function App() {
             onOpenSettings={() => setActiveTab('settings')}
             pipSupported={pip.isSupported}
             autoPipSupported={pip.autoPipSupported}
+            autoPipPermission={pip.autoPipPermission}
             pipKind={pip.pipKind}
             pipError={pip.pipError}
             onTogglePiP={() => {
@@ -992,6 +993,7 @@ export function App() {
             settings={settings}
             theme={theme}
             autoPipSupported={pip.autoPipSupported}
+            autoPipPermission={pip.autoPipPermission}
             availableCameras={session.availableCameras}
             legacyStill={legacyStill}
             onMigrateFromStill={handleMigrateFromStill}
