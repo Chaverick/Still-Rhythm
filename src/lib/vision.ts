@@ -40,14 +40,24 @@ const CHEEK_RIGHT_IDX = [205, 50, 123, 187, 117];
 const NOSE_MOUTH_IDX = [1, 4, 13, 14, 61, 291, 0, 17];
 const FOREHEAD_CENTER_IDX = [10, 151, 9, 108, 337];
 
+// Ear-side lateral boundaries (tragus & temple) to separate ear touches from outer eyebrow
+const RIGHT_EAR_EDGE_IDX = [234, 127, 93]; // image-left ear edge (subject's right)
+const LEFT_EAR_EDGE_IDX = [454, 356, 323]; // image-right ear edge (subject's left)
+const RIGHT_OUTER_BROW = 70;
+const LEFT_OUTER_BROW = 300;
+const UPPER_LIP = 13;
+const LOWER_LIP = 14;
+
 const OUTER_EYE_LEFT_IMG = 33;
 const OUTER_EYE_RIGHT_IMG = 263;
 const FOREHEAD_TOP = 10;
 const CHIN_BOTTOM = 152;
 const NOSE_BRIDGE = 6;
 
+const PRIMARY_TIP_INDICES = new Set([4, 8, 12]);
 const TRACKED_HAND_INDICES = [4, 8, 12, 16, 7, 6, 3, 11];
 const FACE_TOUCH_HAND_INDICES = [4, 8, 12, 9];
+const DRINKING_LOWER_HAND_INDICES = [0, 9, 12, 16, 20];
 
 interface CachedFace {
   timestamp: number;
@@ -62,6 +72,11 @@ interface CachedFace {
   rightCheekPoly: Point2D[];
   noseMouthPoly: Point2D[];
   foreheadPoly: Point2D[];
+  rightEarEdge: Point2D[];
+  leftEarEdge: Point2D[];
+  rightOuterBrow: Point2D;
+  leftOuterBrow: Point2D;
+  mouthCenter: Point2D;
   chinPoint: Point2D;
   headCenter: Point2D;
   headRollDeg: number;
@@ -83,6 +98,7 @@ export interface DetectOptions {
   zoneScale: number;
   activeZones: DetectionZoneId[];
   pinchFilterEnabled: boolean;
+  smartFalseAlarmGuard: boolean;
 }
 
 function resolveLocalUrl(relativePath: string): string {
@@ -143,31 +159,57 @@ function distPointToPolylineIso(
   return minD;
 }
 
-function isHandPinching(hand: NormalizedLandmark[], aspect: number): boolean {
+/**
+ * Computes hand posture metrics for both pinch detection and perspective depth estimation.
+ * At the face plane, handSize / eyeSpan is typically ~0.70–1.25.
+ * Holding a glass/cup 12–20cm closer to the webcam pushes handSize / eyeSpan > ~1.50.
+ */
+function analyzeHandMetrics(
+  hand: NormalizedLandmark[],
+  aspect: number
+): { pinching: boolean; pinchRatio: number; handSize: number } {
   const wrist = hand[0];
+  const indexMcp = hand[5];
   const midMcp = hand[9];
+  const pinkyMcp = hand[17];
   const thumbTip = hand[4];
   const indexTip = hand[8];
   const middleTip = hand[12];
-  if (!wrist || !midMcp || !thumbTip || !indexTip) return true;
+  if (!wrist || !midMcp || !thumbTip || !indexTip) {
+    return { pinching: true, pinchRatio: 0.4, handSize: 0.08 };
+  }
 
   const palmLen = Math.max(0.03, distIso(wrist, midMcp, aspect));
+  const knuckleSpan =
+    indexMcp && pinkyMcp ? distIso(indexMcp, pinkyMcp, aspect) : 0;
+  const handSize = Math.max(palmLen, knuckleSpan * 1.15);
+
   const thumbIndex = distIso(thumbTip, indexTip, aspect) / palmLen;
   const thumbMiddle = middleTip ? distIso(thumbTip, middleTip, aspect) / palmLen : Infinity;
+  const pinchRatio = Math.min(thumbIndex, thumbMiddle);
 
-  return Math.min(thumbIndex, thumbMiddle) <= PINCH_RATIO_THRESHOLD;
+  return {
+    pinching: pinchRatio <= PINCH_RATIO_THRESHOLD,
+    pinchRatio,
+    handSize,
+  };
 }
 
-function extractFacialTension(
+function extractBlendshapeSignals(
   categories: Array<{ categoryName: string; score: number }> | undefined
-): number {
-  if (!categories || categories.length === 0) return 0;
+): { facialTension: number; mouthSipScore: number } {
+  if (!categories || categories.length === 0) {
+    return { facialTension: 0, mouthSipScore: 0 };
+  }
   let browDownL = 0;
   let browDownR = 0;
   let squintL = 0;
   let squintR = 0;
   let mouthPressL = 0;
   let mouthPressR = 0;
+  let mouthPucker = 0;
+  let mouthFunnel = 0;
+  let jawOpen = 0;
   for (const c of categories) {
     switch (c.categoryName) {
       case 'browDownLeft':
@@ -188,12 +230,24 @@ function extractFacialTension(
       case 'mouthPressRight':
         mouthPressR = c.score;
         break;
+      case 'mouthPucker':
+        mouthPucker = c.score;
+        break;
+      case 'mouthFunnel':
+        mouthFunnel = c.score;
+        break;
+      case 'jawOpen':
+        jawOpen = c.score;
+        break;
     }
   }
   const brow = (browDownL + browDownR) * 0.5;
   const squint = (squintL + squintR) * 0.5;
   const jaw = (mouthPressL + mouthPressR) * 0.5;
-  return Math.min(1, brow * 0.5 + squint * 0.3 + jaw * 0.2);
+  return {
+    facialTension: Math.min(1, brow * 0.5 + squint * 0.3 + jaw * 0.2),
+    mouthSipScore: Math.max(mouthPucker, mouthFunnel, jawOpen * 0.85),
+  };
 }
 
 export class LocalVisionEngine {
@@ -208,6 +262,8 @@ export class LocalVisionEngine {
   private lastBgSampleMs = 0;
   private lastBgHash: number[] | null = null;
   private bgCanvas: HTMLCanvasElement | null = null;
+  private lastSipMouthMs = 0;
+  private lastDrinkingMs = 0;
   private consecutiveGpuErrors = 0;
   private initializing: Promise<void> | null = null;
 
@@ -443,16 +499,26 @@ export class LocalVisionEngine {
 
     const hands = handResult.landmarks ?? [];
     const faceLandmarks = faceResult.faceLandmarks?.[0];
-    const facialTension = extractFacialTension(faceResult.faceBlendshapes?.[0]?.categories);
+    const { facialTension, mouthSipScore } = extractBlendshapeSignals(
+      faceResult.faceBlendshapes?.[0]?.categories
+    );
+    if (mouthSipScore >= 0.2) {
+      this.lastSipMouthMs = nowMs;
+    }
+
     let usingOcclusionCache = false;
     let activeFace: CachedFace | null = null;
 
-    if (faceLandmarks && faceLandmarks.length > 425) {
+    if (faceLandmarks && faceLandmarks.length > 455) {
       const leftOuter = faceLandmarks[OUTER_EYE_LEFT_IMG];
       const rightOuter = faceLandmarks[OUTER_EYE_RIGHT_IMG];
       const foreheadTop = faceLandmarks[FOREHEAD_TOP];
       const chinBottom = faceLandmarks[CHIN_BOTTOM];
       const noseBridge = faceLandmarks[NOSE_BRIDGE] ?? foreheadTop;
+      const rOuterBrow = faceLandmarks[RIGHT_OUTER_BROW] ?? leftOuter;
+      const lOuterBrow = faceLandmarks[LEFT_OUTER_BROW] ?? rightOuter;
+      const upperLip = faceLandmarks[UPPER_LIP] ?? chinBottom;
+      const lowerLip = faceLandmarks[LOWER_LIP] ?? chinBottom;
 
       const rawEyeSpan = distIso(leftOuter, rightOuter, aspect);
       const faceHeight = distIso(foreheadTop, chinBottom, aspect);
@@ -484,6 +550,14 @@ export class LocalVisionEngine {
         rightCheekPoly: pickPoints(faceLandmarks, CHEEK_RIGHT_IDX),
         noseMouthPoly: pickPoints(faceLandmarks, NOSE_MOUTH_IDX),
         foreheadPoly: pickPoints(faceLandmarks, FOREHEAD_CENTER_IDX),
+        rightEarEdge: pickPoints(faceLandmarks, RIGHT_EAR_EDGE_IDX),
+        leftEarEdge: pickPoints(faceLandmarks, LEFT_EAR_EDGE_IDX),
+        rightOuterBrow: { x: rOuterBrow.x, y: rOuterBrow.y },
+        leftOuterBrow: { x: lOuterBrow.x, y: lOuterBrow.y },
+        mouthCenter: {
+          x: (upperLip.x + lowerLip.x) * 0.5,
+          y: (upperLip.y + lowerLip.y) * 0.5,
+        },
         chinPoint: { x: chinBottom.x, y: chinBottom.y },
         headCenter: { x: noseBridge.x, y: noseBridge.y },
         headRollDeg,
@@ -559,33 +633,148 @@ export class LocalVisionEngine {
 
     const fingertips: FrameGeometry['fingertips'] = [];
     let handInZone = false;
+    let filteredReason: 'ear' | 'drinking' | 'foreground' | null = null;
     let closestRatio: number | null = null;
     let handNearFaceRegion: FaceTouchRegion | 'neck' | null = null;
 
+    const guardOn = options.smartFalseAlarmGuard;
+
     for (let h = 0; h < hands.length; h++) {
       const hand = hands[h];
-      const pinching = isHandPinching(hand, aspect);
+      const { pinching, pinchRatio, handSize } = analyzeHandMetrics(hand, aspect);
       const passesPinch = !options.pinchFilterEnabled || pinching;
+
+      // 1. Evaluate raw brow/zone proximity for this hand first (preserving full recall for primary fingertips)
+      let handClosestRatio: number | null = null;
+      let handRawHit = false;
+      let handEarFiltered = false;
+      const perPointHits = new Map<number, boolean>();
 
       for (const idx of TRACKED_HAND_INDICES) {
         const pt = hand[idx];
         if (!pt) continue;
 
-        let inZone = false;
-        if (activeZones.length > 0) {
+        let ptHit = false;
+        if (activeZones.length > 0 && activeFace) {
+          // Primary plucking fingertips (thumb, index, middle) use full halo radius for high recall;
+          // secondary mid-joints & ring finger require tighter inner-core contact so stray knuckles
+          // brushing past the temple while touching an ear don't false-trigger.
+          const radiusScale = guardOn && !PRIMARY_TIP_INDICES.has(idx) ? 0.68 : 1.0;
+
           for (const zone of activeZones) {
             const d = distPointToPolylineIso(pt, zone.points, aspect, zone.closed);
+            const effRadius = zone.radius * radiusScale;
             const ratio = d / zone.radius;
             if (closestRatio === null || ratio < closestRatio) {
               closestRatio = ratio;
             }
-            if (d <= zone.radius && passesPinch) {
-              inZone = true;
-              handInZone = true;
+            if (handClosestRatio === null || ratio < handClosestRatio) {
+              handClosestRatio = ratio;
+            }
+
+            if (d <= effRadius && passesPinch) {
+              // Smart Ear-Touch Guard: ignore points strictly lateral outside the outer brow corner
+              // that are closer to the ear/tragus boundary than to the eyebrow itself.
+              if (guardOn && (zone.id === 'left-brow' || zone.id === 'right-brow')) {
+                const lateralPad = activeFace.eyeSpan * 0.03;
+                const outsideRightBrow =
+                  pt.x < activeFace.rightOuterBrow.x - lateralPad &&
+                  pt.y >= activeFace.rightOuterBrow.y - activeFace.eyeSpan * 0.04;
+                const outsideLeftBrow =
+                  pt.x > activeFace.leftOuterBrow.x + lateralPad &&
+                  pt.y >= activeFace.leftOuterBrow.y - activeFace.eyeSpan * 0.04;
+
+                if (outsideRightBrow || outsideLeftBrow) {
+                  const earPoly = outsideRightBrow
+                    ? activeFace.rightEarEdge
+                    : activeFace.leftEarEdge;
+                  const earDist = distPointToPolylineIso(pt, earPoly, aspect, false);
+                  if (earDist < d * 0.95) {
+                    handEarFiltered = true;
+                    continue;
+                  }
+                }
+              }
+
+              ptHit = true;
+              handRawHit = true;
             }
           }
         }
+        perPointHits.set(idx, ptHit);
+      }
 
+      // 2. Smart Drinking-From-Glass & Foreground-Depth Guard (hand-level check)
+      let handSuppressedReason: 'drinking' | 'foreground' | null = null;
+      if (guardOn && activeFace) {
+        const handScaleRatio = handSize / Math.max(0.05, activeFace.eyeSpan);
+        const isOpenCupGrip = pinchRatio > 0.52;
+        const recentSip = nowMs - this.lastSipMouthMs <= 3500;
+        const mouthBand = activeFace.eyeSpan * 0.58;
+
+        let mouthClusterCount = 0;
+        for (const lIdx of DRINKING_LOWER_HAND_INDICES) {
+          const lPt = hand[lIdx];
+          if (lPt && distIso(lPt, activeFace.mouthCenter, aspect) <= mouthBand) {
+            mouthClusterCount += 1;
+          }
+        }
+
+        const palmPt = hand[9] ?? hand[0];
+        const palmToMouth = palmPt
+          ? distIso(palmPt, activeFace.mouthCenter, aspect)
+          : Infinity;
+        let palmToBrow = Infinity;
+        for (const zone of activeZones) {
+          if (palmPt) {
+            palmToBrow = Math.min(
+              palmToBrow,
+              distPointToPolylineIso(palmPt, zone.points, aspect, zone.closed)
+            );
+          }
+        }
+        const closerToMouthThanBrow = palmToMouth < palmToBrow * 1.15;
+
+        // Detect active glass/cup-at-mouth drinking posture and remember for a brief 2.8s sip window
+        const isDrinkingPosture =
+          mouthClusterCount >= 2 &&
+          isOpenCupGrip &&
+          (recentSip || closerToMouthThanBrow);
+
+        if (isDrinkingPosture) {
+          this.lastDrinkingMs = nowMs;
+        }
+
+        if (handRawHit) {
+          const deepBrowCore = handClosestRatio !== null && handClosestRatio <= 0.52;
+          const withinSipWindow = nowMs - this.lastDrinkingMs <= 2800;
+
+          if (isDrinkingPosture || (withinSipWindow && isOpenCupGrip && !deepBrowCore)) {
+            handSuppressedReason = 'drinking';
+          } else if (
+            handScaleRatio >= 1.8 ||
+            (handScaleRatio >= 1.5 && (!pinching || !deepBrowCore))
+          ) {
+            // Perspective depth clue: hand is significantly closer to the camera than the face plane
+            // (e.g. holding a tall glass or bottle up in front of your face).
+            handSuppressedReason = 'foreground';
+          }
+        }
+      }
+
+      const handAccepted = handRawHit && handSuppressedReason === null;
+      if (handAccepted) {
+        handInZone = true;
+      } else if (handSuppressedReason && !handInZone) {
+        filteredReason = handSuppressedReason;
+      } else if (handEarFiltered && !handRawHit && !handInZone && filteredReason === null) {
+        filteredReason = 'ear';
+      }
+
+      for (const idx of TRACKED_HAND_INDICES) {
+        const pt = hand[idx];
+        if (!pt) continue;
+        const inZone = handAccepted && Boolean(perPointHits.get(idx));
         if (idx === 4 || idx === 8 || idx === 12 || idx === 16 || inZone) {
           fingertips.push({
             x: pt.x,
@@ -597,8 +786,15 @@ export class LocalVisionEngine {
         }
       }
 
-      // Silent passive face-touch & neck-rub region classification (only when not triggering brow alert)
-      if (activeFace && !handInZone && handNearFaceRegion === null) {
+      // Silent passive face-touch & neck-rub region classification
+      // (skip while drinking from a glass so sipping doesn't inflate face-touch counts either!)
+      if (
+        activeFace &&
+        !handInZone &&
+        handSuppressedReason !== 'drinking' &&
+        nowMs - this.lastDrinkingMs > 2800 &&
+        handNearFaceRegion === null
+      ) {
         const touchRadius = activeFace.eyeSpan * 0.26;
         const neckTop = activeFace.chinPoint.y + activeFace.faceHeight * 0.08;
         const neckBottom = activeFace.chinPoint.y + activeFace.faceHeight * 0.78;
@@ -608,7 +804,6 @@ export class LocalVisionEngine {
           const pt = hand[idx];
           if (!pt) continue;
 
-          // Check neck / upper trapezius rub first (distinct cervical comfort signal)
           if (
             pt.y >= neckTop &&
             pt.y <= neckBottom &&
@@ -675,6 +870,7 @@ export class LocalVisionEngine {
       haloRadius,
       fingertips,
       handInZone,
+      filteredReason,
       closestRatio,
       upperBody,
     };

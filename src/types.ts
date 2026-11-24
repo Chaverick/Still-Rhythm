@@ -47,6 +47,7 @@ export interface StillSettings {
   zoneScale: number; // multiplier on eye-width normalized halo, default 1.0
   activeZones: DetectionZoneId[];
   pinchFilterEnabled: boolean;
+  smartFalseAlarmGuard: boolean; // reduces false alarms from ear touches & drinking from a glass while keeping high brow recall
   previewMode: PreviewMode;
   pinnedResponses: string[];
   checkedAnchors: string[];
@@ -199,6 +200,7 @@ export interface FrameGeometry {
   haloRadius: number;
   fingertips: Array<Point2D & { inZone: boolean; handIndex: number; pinching: boolean }>;
   handInZone: boolean;
+  filteredReason: 'ear' | 'drinking' | 'foreground' | null;
   closestRatio: number | null;
   upperBody: UpperBodySnapshot;
 }

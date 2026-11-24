@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'stillrhythm-shell-v2';
+const SHELL_CACHE = 'stillrhythm-shell-v3';
 const MODEL_CACHE = 'stillrhythm-models-v1';
 
 const SHELL_ASSETS = [

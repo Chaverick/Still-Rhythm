@@ -358,6 +358,7 @@ export function useStillSession({
         zoneScale: s.zoneScale,
         activeZones: s.activeZones,
         pinchFilterEnabled: s.pinchFilterEnabled,
+        smartFalseAlarmGuard: s.smartFalseAlarmGuard,
       },
       now
     );

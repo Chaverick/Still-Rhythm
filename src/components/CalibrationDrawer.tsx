@@ -391,11 +391,17 @@ export function CalibrationDrawer({
                 ? 'Start session to calibrate'
                 : diagnostics.cameraState !== 'live'
                   ? 'Camera paused by OS'
-                  : diagnostics.faceState === 'detected'
-                    ? `${diagnostics.poseActive ? 'Face & shoulders locked' : 'Face locked'} · ${diagnostics.handsCount} ${diagnostics.handsCount === 1 ? 'hand' : 'hands'}`
-                    : diagnostics.faceState === 'cached'
-                      ? 'Holding zone steady'
-                      : 'Face out of frame'}
+                  : frameGeometry?.filteredReason === 'ear'
+                    ? 'Ignored · ear / temple touch'
+                    : frameGeometry?.filteredReason === 'drinking'
+                      ? 'Ignored · drinking from glass'
+                      : frameGeometry?.filteredReason === 'foreground'
+                        ? 'Ignored · hand closer to camera'
+                        : diagnostics.faceState === 'detected'
+                          ? `${diagnostics.poseActive ? 'Face & shoulders locked' : 'Face locked'} · ${diagnostics.handsCount} ${diagnostics.handsCount === 1 ? 'hand' : 'hands'}`
+                          : diagnostics.faceState === 'cached'
+                            ? 'Holding zone steady'
+                            : 'Face out of frame'}
             </span>
           </div>
 
@@ -542,7 +548,31 @@ export function CalibrationDrawer({
 
           <div className="pinch-filter-row">
             <div className="toggle-copy">
-              <span className="slider-label">Pinch-posture filter (reduces false alarms)</span>
+              <span className="slider-label">Ignore ear touches &amp; drinking (recommended)</span>
+              <span className="toggle-desc">
+                Uses hand-to-face size (depth clue), ear boundary, and sipping posture to cut false
+                triggers from touching your ear or lifting a glass — while keeping eyebrow recall
+                high.
+              </span>
+            </div>
+            <button
+              type="button"
+              id="toggle-smart-guard"
+              role="switch"
+              aria-checked={settings.smartFalseAlarmGuard}
+              aria-label="Toggle ear touch and drinking false-alarm guard"
+              className={`switch ${settings.smartFalseAlarmGuard ? 'switch--on' : ''}`}
+              onClick={() =>
+                onUpdateSettings({ smartFalseAlarmGuard: !settings.smartFalseAlarmGuard })
+              }
+            >
+              <span className="switch-thumb" />
+            </button>
+          </div>
+
+          <div className="pinch-filter-row">
+            <div className="toggle-copy">
+              <span className="slider-label">Pinch-posture filter (stricter)</span>
               <span className="toggle-desc">
                 Only alert when thumb &amp; index/middle fingertips are pinched close together —
                 ignores open-palm resting or quick glasses adjustments.
