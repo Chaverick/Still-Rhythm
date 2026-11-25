@@ -50,9 +50,14 @@ const LOWER_LIP = 14;
 
 const OUTER_EYE_LEFT_IMG = 33;
 const OUTER_EYE_RIGHT_IMG = 263;
+const RIGHT_EYE_TOP = 159;
+const RIGHT_EYE_BOTTOM = 145;
+const LEFT_EYE_TOP = 386;
+const LEFT_EYE_BOTTOM = 374;
 const FOREHEAD_TOP = 10;
 const CHIN_BOTTOM = 152;
 const NOSE_BRIDGE = 6;
+const NOSE_TIP = 1;
 
 const PRIMARY_TIP_INDICES = new Set([4, 8, 12]);
 const TRACKED_HAND_INDICES = [4, 8, 12, 16, 7, 6, 3, 11];
@@ -76,6 +81,10 @@ interface CachedFace {
   leftEarEdge: Point2D[];
   rightOuterBrow: Point2D;
   leftOuterBrow: Point2D;
+  rightEyeCenterY: number;
+  rightEyeBottomY: number;
+  leftEyeCenterY: number;
+  leftEyeBottomY: number;
   mouthCenter: Point2D;
   chinPoint: Point2D;
   headCenter: Point2D;
@@ -83,6 +92,8 @@ interface CachedFace {
   faceHeight: number;
   eyeSpan: number;
   sideAngle: boolean;
+  topDownStrength: number; // 0 (eye-level) .. 1 (steep high-mounted camera looking down)
+  topDownAngle: boolean;
 }
 
 interface CachedPose {
@@ -99,6 +110,10 @@ export interface DetectOptions {
   activeZones: DetectionZoneId[];
   pinchFilterEnabled: boolean;
   smartFalseAlarmGuard: boolean;
+}
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
 }
 
 function resolveLocalUrl(relativePath: string): string {
@@ -122,14 +137,54 @@ function distIso(a: Point2D, b: Point2D, aspect: number): number {
   return Math.hypot(dx, dy);
 }
 
+/**
+ * Estimates downward (top-to-bottom) camera pitch from 0 (eye-level) to 1 (steep high webcam).
+ * Combines 3D depth slope (forehead closer than chin) with 2D vertical foreshortening.
+ */
+function computeTopDownStrength(
+  landmarks: NormalizedLandmark[],
+  rawEyeSpan: number,
+  faceHeight: number,
+  sideAngle: boolean
+): number {
+  const foreheadTop = landmarks[FOREHEAD_TOP];
+  const noseBridge = landmarks[NOSE_BRIDGE] ?? foreheadTop;
+  const noseTip = landmarks[NOSE_TIP] ?? noseBridge;
+  const chinBottom = landmarks[CHIN_BOTTOM];
+  if (!foreheadTop || !chinBottom || faceHeight <= 0.04) return 0;
+
+  const scale = Math.max(0.05, rawEyeSpan, faceHeight * 0.68);
+  const pitchZRatio = ((chinBottom.z ?? 0) - (foreheadTop.z ?? 0)) / scale;
+  const zScore = clamp01((pitchZRatio - 0.14) / 0.28);
+
+  const dyTotal = Math.max(0.04, chinBottom.y - foreheadTop.y);
+  const upperFrac = (noseBridge.y - foreheadTop.y) / dyTotal;
+  const lowerFrac = (chinBottom.y - noseTip.y) / dyTotal;
+  const geoScore = clamp01((upperFrac - lowerFrac - 0.1) / 0.22);
+
+  const aspectComp = sideAngle
+    ? 0
+    : clamp01((rawEyeSpan / Math.max(0.04, faceHeight) - 0.72) / 0.22);
+
+  if (pitchZRatio < 0.02 && geoScore < 0.25) return 0;
+
+  return clamp01(Math.max(zScore * 0.68 + geoScore * 0.32, geoScore * 0.72 + aspectComp * 0.28));
+}
+
 function distPointToPolylineIso(
   p: Point2D,
   poly: Point2D[],
   aspect: number,
-  closed: boolean
+  closed: boolean,
+  belowScale = 1.0
 ): number {
   if (poly.length === 0) return Infinity;
-  if (poly.length === 1) return distIso(p, poly[0], aspect);
+  if (poly.length === 1) {
+    const dx = (p.x - poly[0].x) * aspect;
+    const dy = p.y - poly[0].y;
+    const effDy = dy > 0 && belowScale < 1.0 ? dy / belowScale : dy;
+    return Math.hypot(dx, effDy);
+  }
 
   let minD = Infinity;
   const px = p.x * aspect;
@@ -153,7 +208,10 @@ function distPointToPolylineIso(
     }
     const cx = ax + t * abx;
     const cy = ay + t * aby;
-    const d = Math.hypot(px - cx, py - cy);
+    const dx = px - cx;
+    const dy = py - cy;
+    const effDy = dy > 0 && belowScale < 1.0 ? dy / belowScale : dy;
+    const d = Math.hypot(dx, effDy);
     if (d < minD) minD = d;
   }
   return minD;
@@ -517,6 +575,10 @@ export class LocalVisionEngine {
       const noseBridge = faceLandmarks[NOSE_BRIDGE] ?? foreheadTop;
       const rOuterBrow = faceLandmarks[RIGHT_OUTER_BROW] ?? leftOuter;
       const lOuterBrow = faceLandmarks[LEFT_OUTER_BROW] ?? rightOuter;
+      const rEyeTop = faceLandmarks[RIGHT_EYE_TOP] ?? leftOuter;
+      const rEyeBot = faceLandmarks[RIGHT_EYE_BOTTOM] ?? leftOuter;
+      const lEyeTop = faceLandmarks[LEFT_EYE_TOP] ?? rightOuter;
+      const lEyeBot = faceLandmarks[LEFT_EYE_BOTTOM] ?? rightOuter;
       const upperLip = faceLandmarks[UPPER_LIP] ?? chinBottom;
       const lowerLip = faceLandmarks[LOWER_LIP] ?? chinBottom;
 
@@ -525,6 +587,13 @@ export class LocalVisionEngine {
       const heightEquivSpan = faceHeight * 0.68;
       const robustScale = Math.max(0.05, rawEyeSpan, heightEquivSpan);
       const sideAngle = heightEquivSpan > 0.04 && rawEyeSpan / heightEquivSpan < 0.82;
+      const topDownStrength = computeTopDownStrength(
+        faceLandmarks,
+        rawEyeSpan,
+        faceHeight,
+        sideAngle
+      );
+      const topDownAngle = topDownStrength >= 0.32;
 
       const headRollDeg =
         (Math.atan2(rightOuter.y - leftOuter.y, (rightOuter.x - leftOuter.x) * aspect) * 180) /
@@ -554,6 +623,10 @@ export class LocalVisionEngine {
         leftEarEdge: pickPoints(faceLandmarks, LEFT_EAR_EDGE_IDX),
         rightOuterBrow: { x: rOuterBrow.x, y: rOuterBrow.y },
         leftOuterBrow: { x: lOuterBrow.x, y: lOuterBrow.y },
+        rightEyeCenterY: (rEyeTop.y + rEyeBot.y) * 0.5,
+        rightEyeBottomY: rEyeBot.y,
+        leftEyeCenterY: (lEyeTop.y + lEyeBot.y) * 0.5,
+        leftEyeBottomY: lEyeBot.y,
         mouthCenter: {
           x: (upperLip.x + lowerLip.x) * 0.5,
           y: (upperLip.y + lowerLip.y) * 0.5,
@@ -564,6 +637,8 @@ export class LocalVisionEngine {
         faceHeight,
         eyeSpan: robustScale,
         sideAngle,
+        topDownStrength,
+        topDownAngle,
       };
       this.cachedFace = activeFace;
     } else if (this.cachedFace) {
@@ -633,22 +708,35 @@ export class LocalVisionEngine {
 
     const fingertips: FrameGeometry['fingertips'] = [];
     let handInZone = false;
-    let filteredReason: 'ear' | 'drinking' | 'foreground' | null = null;
+    let filteredReason: 'ear' | 'drinking' | 'foreground' | 'below-brow' | null = null;
     let closestRatio: number | null = null;
     let handNearFaceRegion: FaceTouchRegion | 'neck' | null = null;
 
     const guardOn = options.smartFalseAlarmGuard;
+    const tdStrength = activeFace?.topDownStrength ?? 0;
+    const isTopDown = Boolean(activeFace?.topDownAngle);
 
     for (let h = 0; h < hands.length; h++) {
       const hand = hands[h];
       const { pinching, pinchRatio, handSize } = analyzeHandMetrics(hand, aspect);
       const passesPinch = !options.pinchFilterEnabled || pinching;
 
-      // 1. Evaluate raw brow/zone proximity for this hand first (preserving full recall for primary fingertips)
+      // 1. Evaluate brow/zone proximity with asymmetric downward halo & top-down angle protection
       let handClosestRatio: number | null = null;
       let handRawHit = false;
+      let handPrimaryHit = false;
       let handEarFiltered = false;
+      let handBelowFiltered = false;
       const perPointHits = new Map<number, boolean>();
+
+      // Highest primary plucking fingertip (smallest y = highest on screen)
+      let minPrimaryTipY = Infinity;
+      for (const tipIdx of PRIMARY_TIP_INDICES) {
+        const tp = hand[tipIdx];
+        if (tp && tp.y < minPrimaryTipY) minPrimaryTipY = tp.y;
+      }
+
+      const secondaryRadiusScale = isTopDown ? 0.56 : 0.68;
 
       for (const idx of TRACKED_HAND_INDICES) {
         const pt = hand[idx];
@@ -656,15 +744,24 @@ export class LocalVisionEngine {
 
         let ptHit = false;
         if (activeZones.length > 0 && activeFace) {
-          // Primary plucking fingertips (thumb, index, middle) use full halo radius for high recall;
-          // secondary mid-joints & ring finger require tighter inner-core contact so stray knuckles
-          // brushing past the temple while touching an ear don't false-trigger.
-          const radiusScale = guardOn && !PRIMARY_TIP_INDICES.has(idx) ? 0.68 : 1.0;
+          const isPrimaryTip = PRIMARY_TIP_INDICES.has(idx);
+          const radiusScale = guardOn && !isPrimaryTip ? secondaryRadiusScale : 1.0;
 
           for (const zone of activeZones) {
-            const d = distPointToPolylineIso(pt, zone.points, aspect, zone.closed);
+            const isBrowZone = zone.id === 'left-brow' || zone.id === 'right-brow';
+            // Keep 100% full halo radius on and above the eyebrow; tighten downward bleed below
+            // the brow especially when a top-to-bottom camera foreshortens brow-to-eye/cheek spacing.
+            const belowScale =
+              guardOn && isBrowZone ? Math.max(0.46, 0.86 - tdStrength * 0.4) : 1.0;
+
+            const dRaw = distPointToPolylineIso(pt, zone.points, aspect, zone.closed, 1.0);
+            const dAsym =
+              belowScale < 1.0
+                ? distPointToPolylineIso(pt, zone.points, aspect, zone.closed, belowScale)
+                : dRaw;
+
             const effRadius = zone.radius * radiusScale;
-            const ratio = d / zone.radius;
+            const ratio = dAsym / zone.radius;
             if (closestRatio === null || ratio < closestRatio) {
               closestRatio = ratio;
             }
@@ -672,10 +769,30 @@ export class LocalVisionEngine {
               handClosestRatio = ratio;
             }
 
-            if (d <= effRadius && passesPinch) {
-              // Smart Ear-Touch Guard: ignore points strictly lateral outside the outer brow corner
-              // that are closer to the ear/tragus boundary than to the eyebrow itself.
-              if (guardOn && (zone.id === 'left-brow' || zone.id === 'right-brow')) {
+            if (dAsym <= effRadius && passesPinch) {
+              // Anatomical Lower-Eye Floor for brow zones:
+              // Stops cheek, nose-bridge, under-eye, and glasses nose-pad touches from triggering
+              // when a high-mounted camera projects lower-face touches upward into the brow halo.
+              if (guardOn && isBrowZone) {
+                const eyeCenterY =
+                  zone.id === 'left-brow'
+                    ? activeFace.leftEyeCenterY
+                    : activeFace.rightEyeCenterY;
+                const eyeBottomY =
+                  zone.id === 'left-brow'
+                    ? activeFace.leftEyeBottomY
+                    : activeFace.rightEyeBottomY;
+                const floorY =
+                  (eyeBottomY + activeFace.eyeSpan * 0.015) * (1 - tdStrength) +
+                  eyeCenterY * tdStrength;
+
+                if (pt.y > floorY) {
+                  handBelowFiltered = true;
+                  continue;
+                }
+
+                // Smart Ear-Touch Guard: ignore points strictly lateral outside the outer brow corner
+                // that are closer to the ear/tragus boundary than to the eyebrow itself.
                 const lateralPad = activeFace.eyeSpan * 0.03;
                 const outsideRightBrow =
                   pt.x < activeFace.rightOuterBrow.x - lateralPad &&
@@ -689,7 +806,8 @@ export class LocalVisionEngine {
                     ? activeFace.rightEarEdge
                     : activeFace.leftEarEdge;
                   const earDist = distPointToPolylineIso(pt, earPoly, aspect, false);
-                  if (earDist < d * 0.95) {
+                  const earMult = isTopDown ? 1.05 : 0.95;
+                  if (earDist < dRaw * earMult) {
                     handEarFiltered = true;
                     continue;
                   }
@@ -698,14 +816,20 @@ export class LocalVisionEngine {
 
               ptHit = true;
               handRawHit = true;
+              if (isPrimaryTip) {
+                handPrimaryHit = true;
+              }
+            } else if (guardOn && isBrowZone && dRaw <= effRadius && passesPinch) {
+              // Would have triggered symmetrically below the brow, cleanly caught by top-down guard
+              handBelowFiltered = true;
             }
           }
         }
         perPointHits.set(idx, ptHit);
       }
 
-      // 2. Smart Drinking-From-Glass & Foreground-Depth Guard (hand-level check)
-      let handSuppressedReason: 'drinking' | 'foreground' | null = null;
+      // 2. Smart Drinking-From-Glass, Top-Down Knuckle-Projection & Foreground-Depth Guard
+      let handSuppressedReason: 'drinking' | 'foreground' | 'below-brow' | null = null;
       if (guardOn && activeFace) {
         const handScaleRatio = handSize / Math.max(0.05, activeFace.eyeSpan);
         const isOpenCupGrip = pinchRatio > 0.52;
@@ -735,7 +859,6 @@ export class LocalVisionEngine {
         }
         const closerToMouthThanBrow = palmToMouth < palmToBrow * 1.15;
 
-        // Detect active glass/cup-at-mouth drinking posture and remember for a brief 2.8s sip window
         const isDrinkingPosture =
           mouthClusterCount >= 2 &&
           isOpenCupGrip &&
@@ -748,15 +871,24 @@ export class LocalVisionEngine {
         if (handRawHit) {
           const deepBrowCore = handClosestRatio !== null && handClosestRatio <= 0.52;
           const withinSipWindow = nowMs - this.lastDrinkingMs <= 2800;
+          const avgEyeCenterY = (activeFace.leftEyeCenterY + activeFace.rightEyeCenterY) * 0.5;
+          const hardFgRatio = 1.8 - tdStrength * 0.22; // 1.80 straight-on -> 1.58 steep top-down
+          const softFgRatio = 1.5 - tdStrength * 0.16; // 1.50 straight-on -> 1.34 steep top-down
 
           if (isDrinkingPosture || (withinSipWindow && isOpenCupGrip && !deepBrowCore)) {
             handSuppressedReason = 'drinking';
           } else if (
-            handScaleRatio >= 1.8 ||
-            (handScaleRatio >= 1.5 && (!pinching || !deepBrowCore))
+            isTopDown &&
+            !handPrimaryHit &&
+            minPrimaryTipY > avgEyeCenterY
           ) {
-            // Perspective depth clue: hand is significantly closer to the camera than the face plane
-            // (e.g. holding a tall glass or bottle up in front of your face).
+            // Under a top-down camera, all primary fingertips are down on the nose/cheek/mouth
+            // and only a raised knuckle projected upward into the brow zone.
+            handSuppressedReason = 'below-brow';
+          } else if (
+            handScaleRatio >= hardFgRatio ||
+            (handScaleRatio >= softFgRatio && (!pinching || !deepBrowCore))
+          ) {
             handSuppressedReason = 'foreground';
           }
         }
@@ -769,6 +901,8 @@ export class LocalVisionEngine {
         filteredReason = handSuppressedReason;
       } else if (handEarFiltered && !handRawHit && !handInZone && filteredReason === null) {
         filteredReason = 'ear';
+      } else if (handBelowFiltered && !handRawHit && !handInZone && filteredReason === null) {
+        filteredReason = 'below-brow';
       }
 
       for (const idx of TRACKED_HAND_INDICES) {
@@ -862,6 +996,7 @@ export class LocalVisionEngine {
       facePresent: activeFace !== null,
       usingOcclusionCache,
       sideAngle: Boolean(activeFace?.sideAngle),
+      topDownAngle: Boolean(activeFace?.topDownAngle),
       faceOval: activeFace?.faceOval ?? [],
       leftEye: activeFace?.leftEye ?? [],
       rightEye: activeFace?.rightEye ?? [],
@@ -877,9 +1012,9 @@ export class LocalVisionEngine {
   }
 
   /**
-   * Evaluates how directly front-facing and centered the user's face appears in a candidate camera.
+   * Evaluates how directly front-facing and eye-level the user's face appears in a candidate camera.
    * Used when multiple cameras exist (e.g. side MacBook webcam + front Logitech desk webcam)
-   * to automatically pick the camera directly in front of the user's face.
+   * to automatically pick the camera most directly in front of the user's face.
    */
   evaluateFrontFacingScore(
     video: HTMLVideoElement,
@@ -917,7 +1052,7 @@ export class LocalVisionEngine {
     const rightOuter = lms[OUTER_EYE_RIGHT_IMG];
     const foreheadTop = lms[FOREHEAD_TOP];
     const chinBottom = lms[CHIN_BOTTOM];
-    const noseTip = lms[1] ?? lms[NOSE_BRIDGE];
+    const noseTip = lms[NOSE_TIP] ?? lms[NOSE_BRIDGE];
     const rightEdge = lms[234]; // image-left edge of face
     const leftEdge = lms[454]; // image-right edge of face
 
@@ -926,6 +1061,8 @@ export class LocalVisionEngine {
     const heightEquivSpan = faceHeight * 0.68;
     const frontRatio = Math.min(1.05, rawEyeSpan / Math.max(0.04, heightEquivSpan));
     const sideAngle = rawEyeSpan / Math.max(0.04, heightEquivSpan) < 0.82;
+    const topDownStrength = computeTopDownStrength(lms, rawEyeSpan, faceHeight, sideAngle);
+    const pitchScore = Math.max(0.25, 1 - topDownStrength * 0.65);
 
     // Nose-to-face-edge horizontal symmetry: 1.0 when looking straight at camera, drops sharply at side angles
     const distToLeftImg = Math.abs(noseTip.x - rightEdge.x);
@@ -939,14 +1076,14 @@ export class LocalVisionEngine {
     const centerOffset = Math.hypot(noseTip.x - 0.5, noseTip.y - 0.46);
     const centerScore = Math.max(0, 1 - centerOffset * 1.45);
 
-    // Clear visible face size bonus (sweet spot 0.10..0.38 eyeSpan)
+    // Clear visible face size bonus (sweet spot 0.09..0.42 eyeSpan)
     const sizeScore =
       rawEyeSpan >= 0.09 && rawEyeSpan <= 0.42
         ? 1
         : Math.max(0.2, 1 - Math.abs(rawEyeSpan - 0.22) * 2.2);
 
     const frontScore =
-      yawSymmetry * 52 + frontRatio * 28 + centerScore * 14 + sizeScore * 6;
+      yawSymmetry * 46 + frontRatio * 22 + pitchScore * 16 + centerScore * 10 + sizeScore * 6;
 
     return {
       faceFound: true,

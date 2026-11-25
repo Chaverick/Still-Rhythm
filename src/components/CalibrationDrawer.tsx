@@ -406,13 +406,15 @@ export function CalibrationDrawer({
                     ? 'Ignored · ear / temple touch'
                     : frameGeometry?.filteredReason === 'drinking'
                       ? 'Ignored · drinking from glass'
-                      : frameGeometry?.filteredReason === 'foreground'
-                        ? 'Ignored · hand closer to camera'
-                        : diagnostics.faceState === 'detected'
-                          ? `${diagnostics.poseActive ? 'Face & shoulders locked' : 'Face locked'} · ${diagnostics.handsCount} ${diagnostics.handsCount === 1 ? 'hand' : 'hands'}`
-                          : diagnostics.faceState === 'cached'
-                            ? 'Holding zone steady'
-                            : 'Face out of frame'}
+                      : frameGeometry?.filteredReason === 'below-brow'
+                        ? 'Ignored · below-brow overlap'
+                        : frameGeometry?.filteredReason === 'foreground'
+                          ? 'Ignored · hand closer to camera'
+                          : diagnostics.faceState === 'detected'
+                            ? `${diagnostics.topDownAngle ? 'Top-down · tuned' : diagnostics.poseActive ? 'Face & shoulders locked' : 'Face locked'} · ${diagnostics.handsCount} ${diagnostics.handsCount === 1 ? 'hand' : 'hands'}`
+                            : diagnostics.faceState === 'cached'
+                              ? 'Holding zone steady'
+                              : 'Face out of frame'}
             </span>
           </div>
 
@@ -559,11 +561,13 @@ export function CalibrationDrawer({
 
           <div className="pinch-filter-row">
             <div className="toggle-copy">
-              <span className="slider-label">Ignore ear touches &amp; drinking (recommended)</span>
+              <span className="slider-label">
+                Ignore ear touches, drinking &amp; top-down overlaps (recommended)
+              </span>
               <span className="toggle-desc">
-                Uses hand-to-face size (depth clue), ear boundary, and sipping posture to cut false
-                triggers from touching your ear or lifting a glass — while keeping eyebrow recall
-                high.
+                Uses hand-to-face depth scale, ear &amp; eye-line boundaries, sipping cues, and
+                top-down camera angle compensation to reduce false alarms while keeping eyebrow
+                recall high.
               </span>
             </div>
             <button

@@ -192,6 +192,7 @@ export interface FrameGeometry {
   facePresent: boolean;
   usingOcclusionCache: boolean;
   sideAngle: boolean;
+  topDownAngle: boolean;
   faceOval: Point2D[];
   leftEye: Point2D[];
   rightEye: Point2D[];
@@ -200,7 +201,7 @@ export interface FrameGeometry {
   haloRadius: number;
   fingertips: Array<Point2D & { inZone: boolean; handIndex: number; pinching: boolean }>;
   handInZone: boolean;
-  filteredReason: 'ear' | 'drinking' | 'foreground' | null;
+  filteredReason: 'ear' | 'drinking' | 'foreground' | 'below-brow' | null;
   closestRatio: number | null;
   upperBody: UpperBodySnapshot;
 }
@@ -236,6 +237,7 @@ export interface VisionDiagnostics {
   faceState: 'detected' | 'cached' | 'away';
   poseActive: boolean;
   sideAngle: boolean;
+  topDownAngle?: boolean;
   cameraState: 'live' | 'muted' | 'ended';
   cameraStalled: boolean;
   cameraLabel: string;
