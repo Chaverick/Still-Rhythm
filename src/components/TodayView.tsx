@@ -301,31 +301,31 @@ export function TodayView({
         <TypewriterHeadline text={headline} />
         <p className="hero-subline">{subline}</p>
 
-        <div className="hero-cta-row">
+        <div className="hero-toolbar">
           {!isRunning ? (
             <button
               type="button"
               id="btn-session-toggle"
-              className="btn btn-primary btn-lg"
+              className="btn btn-primary btn-sm"
               disabled={isBusy}
               onClick={onStart}
             >
               {status === 'requesting-camera'
-                ? 'Starting sensors…'
+                ? 'Starting…'
                 : status === 'loading-models'
-                  ? 'Loading local models…'
+                  ? 'Loading…'
                   : status === 'choosing-camera'
-                    ? 'Finding front camera…'
+                    ? 'Finding camera…'
                     : 'Begin session'}
             </button>
           ) : (
             <button
               type="button"
               id="btn-session-toggle"
-              className="btn btn-subtle btn-lg"
+              className="btn btn-subtle btn-sm"
               onClick={onStop}
             >
-              Pause session
+              Pause
             </button>
           )}
 
@@ -333,18 +333,17 @@ export function TodayView({
             <button
               type="button"
               id="btn-toggle-pip"
-              className={`btn btn-lg ${pipActive ? 'btn-subtle' : 'btn-ghost'}`}
+              className={`btn btn-sm ${pipActive ? 'btn-subtle' : 'btn-ghost'}`}
               title="Floats a tiny Still Rhythm card in the corner over other tabs and Mac apps"
               onClick={onTogglePiP}
             >
-              {pipActive ? 'Close mini-window' : 'Float mini-window'}
+              {pipActive ? 'Close mini' : 'Mini-window'}
             </button>
           )}
-        </div>
 
-        {/* Slim Context Row: Desk / Away + Meeting / Auto-Speaking */}
-        <div className="context-pill-row">
-          <div className="segmented" role="group" aria-label="Where you are working">
+          <span className="hero-toolbar-sep" aria-hidden="true" />
+
+          <div className="segmented segmented--compact" role="group" aria-label="Where you are working">
             <button
               type="button"
               className={`segmented-btn ${settings.workContext === 'desk' ? 'segmented-btn--active' : ''}`}
@@ -357,14 +356,14 @@ export function TodayView({
               className={`segmented-btn ${settings.workContext === 'portable' ? 'segmented-btn--active' : ''}`}
               onClick={() => onUpdateSettings({ workContext: 'portable' })}
             >
-              Away / Bed
+              Away
             </button>
           </div>
 
           <button
             type="button"
             id="btn-meeting-toggle"
-            className={`meeting-pill ${
+            className={`meeting-pill meeting-pill--compact ${
               inMeetingMode
                 ? 'meeting-pill--active'
                 : isRunning && rhythm.isSpeaking
@@ -377,9 +376,9 @@ export function TodayView({
           >
             <span className="meeting-pill-dot" aria-hidden="true" />
             {inMeetingMode
-              ? 'In a meeting'
+              ? 'In meeting'
               : isRunning && rhythm.isSpeaking
-                ? 'Speaking · auto'
+                ? 'Speaking'
                 : 'Meeting'}
           </button>
         </div>
@@ -498,7 +497,34 @@ export function TodayView({
       )}
 
       {/* =====================================================================
-          LAYER 2: One Unified "Live Rhythm" Card
+          TOP-LINE SUMMARY: Calm today · Urges redirected · Grace recoveries
+          ===================================================================== */}
+      <section className="metrics-strip metrics-strip--top" aria-label="Today's stillness summary">
+        <div className="metric-item">
+          <span className="metric-label">Calm today</span>
+          <span className="metric-value tabular">{formatDuration(today.calmSeconds)}</span>
+          <span className="metric-footnote">
+            {totalCalmSeconds > today.calmSeconds
+              ? `${formatDuration(totalCalmSeconds)} all-time`
+              : 'Accumulates gently'}
+          </span>
+        </div>
+
+        <div className="metric-item">
+          <span className="metric-label">Urges redirected</span>
+          <span className="metric-value tabular">{today.urgesRedirected}</span>
+          <span className="metric-footnote">Eyebrow catches today</span>
+        </div>
+
+        <div className="metric-item">
+          <span className="metric-label">Grace recoveries</span>
+          <span className="metric-value tabular">{today.graceRecoveries}</span>
+          <span className="metric-footnote">Reset without shame</span>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          UNIFIED LIVE RHYTHM CARD
           (Desk Position + Voice Comfort dB + Quiet Background Signals)
           ===================================================================== */}
       <section className="unified-rhythm-card" aria-label="Live daily rhythm">
@@ -515,7 +541,9 @@ export function TodayView({
                 </div>
                 <p className="rhythm-band-sub">
                   {!isRunning ? (
-                    'Quiet sit & stand balance — no notifications.'
+                    <>
+                      Currently <strong>{rhythm.postureState === 'standing' ? 'Standing' : 'Sitting'}</strong> · quiet sit &amp; stand balance.
+                    </>
                   ) : rhythm.postureState === 'sitting' ? (
                     readyToSwitch ? (
                       <>
@@ -542,11 +570,11 @@ export function TodayView({
                 </p>
               </div>
 
-              <div className="segmented" role="group" aria-label="Current desk position">
+              <div className="segmented posture-segmented" role="group" aria-label="Current desk position">
                 <button
                   type="button"
                   id="btn-posture-sitting"
-                  className={`segmented-btn ${rhythm.postureState === 'sitting' ? 'segmented-btn--active' : ''}`}
+                  className={`segmented-btn ${rhythm.postureState === 'sitting' ? 'segmented-btn--active segmented-btn--sit' : ''}`}
                   onClick={() => onSetPostureManual('sitting')}
                 >
                   Sitting
@@ -554,7 +582,7 @@ export function TodayView({
                 <button
                   type="button"
                   id="btn-posture-standing"
-                  className={`segmented-btn ${rhythm.postureState === 'standing' ? 'segmented-btn--active' : ''}`}
+                  className={`segmented-btn ${rhythm.postureState === 'standing' ? 'segmented-btn--active segmented-btn--stand' : ''}`}
                   onClick={() => onSetPostureManual('standing')}
                 >
                   Standing
@@ -598,7 +626,7 @@ export function TodayView({
               <div className="rhythm-bar-track">
                 <div
                   className={`rhythm-bar-fill ${readyToSwitch ? 'rhythm-bar-fill--warm' : ''}`}
-                  style={{ width: `${Math.max(3, boutPct)}%` }}
+                  style={{ width: `${Math.max(4, boutPct)}%` }}
                 />
               </div>
             )}
@@ -732,33 +760,6 @@ export function TodayView({
               </span>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* =====================================================================
-          LAYER 3: Classic Still Strip + Single Subtle Setup Link
-          ===================================================================== */}
-      <section className="metrics-strip" aria-label="Today's stillness summary">
-        <div className="metric-item">
-          <span className="metric-label">Calm today</span>
-          <span className="metric-value tabular">{formatDuration(today.calmSeconds)}</span>
-          <span className="metric-footnote">
-            {totalCalmSeconds > today.calmSeconds
-              ? `${formatDuration(totalCalmSeconds)} all-time`
-              : 'Accumulates gently'}
-          </span>
-        </div>
-
-        <div className="metric-item">
-          <span className="metric-label">Urges redirected</span>
-          <span className="metric-value tabular">{today.urgesRedirected}</span>
-          <span className="metric-footnote">Eyebrow catches today</span>
-        </div>
-
-        <div className="metric-item">
-          <span className="metric-label">Grace recoveries</span>
-          <span className="metric-value tabular">{today.graceRecoveries}</span>
-          <span className="metric-footnote">Reset without shame</span>
         </div>
       </section>
 

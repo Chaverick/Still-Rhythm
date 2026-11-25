@@ -55,6 +55,7 @@ export interface StillSettings {
   stage2Enabled: boolean;
   soundEnabled: boolean;
   stage2RepeatChime: boolean;
+  desktopVisualBanner: boolean; // silent macOS/desktop visual banner for muted speaker / no earphones
   autoPipOnTabSwitch: boolean;
   stage1DwellSec: number; // default 1.2s
   stage2DwellSec: number; // default 2.6s

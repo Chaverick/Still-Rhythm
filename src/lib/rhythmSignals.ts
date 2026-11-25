@@ -12,6 +12,7 @@ import type {
   VoiceComfortStatus,
 } from '../types';
 import type { SecondaryCameraSample } from './dualCameraPosture';
+import { loadPostureStretch, savePostureStretch } from './storage';
 import type { VoiceSample } from './voiceMonitor';
 
 export interface RhythmStepCallbacks {
@@ -113,6 +114,7 @@ export class RhythmSignalProcessor {
   private postureState: PostureState = 'sitting';
   private postureSource: 'auto' | 'manual' = 'manual';
   private boutStartWallMs = Date.now();
+  private lastPosturePersistWallMs = 0;
   private pendingCandidate: { candidate: PostureState; reason: string; sinceMs: number } | null = null;
   private pendingPrompt: PostureChangePrompt | null = null;
   private posturePromptCooldownUntilWallMs = 0;
@@ -153,6 +155,12 @@ export class RhythmSignalProcessor {
 
   constructor(calibration: PostureCalibration) {
     this.applyCalibration(calibration);
+    const savedStretch = loadPostureStretch();
+    if (savedStretch) {
+      this.postureState = savedStretch.postureState;
+      this.boutStartWallMs = savedStretch.boutStartWallMs;
+      this.lastPosturePersistWallMs = savedStretch.updatedAt;
+    }
   }
 
   applyCalibration(cal: PostureCalibration): void {
@@ -255,6 +263,8 @@ export class RhythmSignalProcessor {
     this.pendingCandidate = null;
     this.pendingPrompt = null;
     this.posturePromptCooldownUntilWallMs = nowWallMs + POSTURE_COOLDOWN_AFTER_YES_MS;
+    savePostureStretch(this.postureState, this.boutStartWallMs, nowWallMs);
+    this.lastPosturePersistWallMs = nowWallMs;
   }
 
   /**
@@ -327,6 +337,8 @@ export class RhythmSignalProcessor {
       this.boutStartWallMs = nowWallMs;
       this.captureCurrentAnchors();
       this.posturePromptCooldownUntilWallMs = nowWallMs + POSTURE_COOLDOWN_AFTER_YES_MS;
+      savePostureStretch(this.postureState, this.boutStartWallMs, nowWallMs);
+      this.lastPosturePersistWallMs = nowWallMs;
       onLearn(patch);
       onSwitched(next);
     } else {
@@ -972,6 +984,8 @@ export class RhythmSignalProcessor {
               this.captureCurrentAnchors();
               this.pendingCandidate = null;
               this.posturePromptCooldownUntilWallMs = nowWallMs + POSTURE_COOLDOWN_AFTER_YES_MS;
+              savePostureStretch(this.postureState, this.boutStartWallMs, nowWallMs);
+              this.lastPosturePersistWallMs = nowWallMs;
               callbacks.onPostureAutoSwitched(candidate);
             } else {
               // Show a single quiet, non-blocking confirmation bar in Today & PiP
@@ -989,6 +1003,11 @@ export class RhythmSignalProcessor {
       } else {
         this.pendingCandidate = null;
       }
+    }
+
+    if (nowWallMs - this.lastPosturePersistWallMs >= 15_000) {
+      savePostureStretch(this.postureState, this.boutStartWallMs, nowWallMs);
+      this.lastPosturePersistWallMs = nowWallMs;
     }
 
     return this.getState(settings, nowWallMs, nowMs, context.inMeetingMode);

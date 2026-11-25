@@ -3,6 +3,7 @@ import { playSingingBowl, unlockAudio } from '../lib/audio';
 import { DualCameraMonitor } from '../lib/dualCameraPosture';
 import { RhythmSignalProcessor } from '../lib/rhythmSignals';
 import { checkModelsCached, LocalVisionEngine } from '../lib/vision';
+import { fireVisualDesktopBanner } from '../lib/visualAlerts';
 import { LocalVoiceMonitor } from '../lib/voiceMonitor';
 import { WakeLockController } from '../lib/wakeLock';
 import type {
@@ -532,6 +533,9 @@ export function useStillSession({
           if (s.soundEnabled) {
             playSingingBowl('gentle');
           }
+          if (s.desktopVisualBanner) {
+            fireVisualDesktopBanner('stage1', s.userName);
+          }
           setStage1AutoCatch({
             startedAt: wallNow,
             handClearedAt: null,
@@ -547,6 +551,9 @@ export function useStillSession({
           setDwellSec(0);
           setStage1AutoCatch(null);
           setEdgeGlowActive(false);
+          if (s.desktopVisualBanner) {
+            fireVisualDesktopBanner('stage2', s.userName);
+          }
           onStage2TriggeredRef.current();
         }
       } else {
@@ -1282,6 +1289,9 @@ export function useStillSession({
     unlockAudio();
     if (settingsRef.current.soundEnabled) {
       playSingingBowl('gentle');
+    }
+    if (settingsRef.current.desktopVisualBanner) {
+      fireVisualDesktopBanner('stage1', settingsRef.current.userName);
     }
     setEdgeGlowActive(true);
     if (testGlowTimerRef.current) {

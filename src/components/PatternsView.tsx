@@ -671,207 +671,219 @@ export function PatternsView({
         </div>
       </section>
 
-      {/* Interactive 14-day Trend Chart (Preserved & expanded from Still) */}
-      <section className="editorial-section" aria-label="Fourteen-day trend">
-        <div className="section-head-row">
-          <h2 className="section-heading">Last 14 days</h2>
-          <div className="segmented" role="group" aria-label="Select progress metric">
-            <button
-              type="button"
-              className={`segmented-btn ${metric === 'calm' ? 'segmented-btn--active' : ''}`}
-              onClick={() => setMetric('calm')}
-            >
-              Calm
-            </button>
-            <button
-              type="button"
-              className={`segmented-btn ${metric === 'standing' ? 'segmented-btn--active' : ''}`}
-              onClick={() => setMetric('standing')}
-            >
-              Standing
-            </button>
-            <button
-              type="button"
-              className={`segmented-btn ${metric === 'redirected' ? 'segmented-btn--active' : ''}`}
-              onClick={() => setMetric('redirected')}
-            >
-              Caught
-            </button>
-            <button
-              type="button"
-              className={`segmented-btn ${metric === 'touches' ? 'segmented-btn--active' : ''}`}
-              onClick={() => setMetric('touches')}
-            >
-              Face touches
-            </button>
-          </div>
-        </div>
-
-        <div className="trend-card">
-          <div className="trend-bars" role="list" aria-label="14 day bar chart">
-            {last14Days.map((row, idx) => {
-              const val = chartValues.raw[idx];
-              const isEmpty = val === 0;
-              const pct = isEmpty
-                ? 5
-                : Math.max(10, Math.round((val / chartValues.maxVal) * 100));
-              const isSelected = row.dateKey === selectedTrendDay.dateKey;
-
-              return (
+      {/* Progressive-disclosure drawers for deeper history & charts (zero features lost) */}
+      <div className="drawer-stack">
+        <details className="streamline-drawer">
+          <summary className="streamline-drawer-summary">
+            <span>Last 14 days</span>
+            <span className="streamline-drawer-meta tabular">
+              {selectedTrendDay.fullLabel} · {formatDuration(selectedTrendDay.summary.calmSeconds)} calm
+            </span>
+          </summary>
+          <div className="streamline-drawer-body">
+            <div className="section-head-row" style={{ marginBottom: 10 }}>
+              <span className="section-meta">Choose metric</span>
+              <div className="segmented segmented--compact" role="group" aria-label="Select progress metric">
                 <button
-                  key={row.dateKey}
                   type="button"
-                  role="listitem"
-                  className={`trend-col ${isSelected ? 'trend-col--selected' : ''}`}
-                  aria-label={`${row.fullLabel}: ${formatDuration(row.summary.calmSeconds)} calm`}
-                  onClick={() => setSelectedTrendKey(row.dateKey)}
+                  className={`segmented-btn ${metric === 'calm' ? 'segmented-btn--active' : ''}`}
+                  onClick={() => setMetric('calm')}
                 >
-                  <span className="trend-bar-track">
-                    <span
-                      className={`trend-bar ${row.isToday ? 'trend-bar--today' : ''} ${
-                        isEmpty ? 'trend-bar--empty' : ''
-                      } ${metric === 'standing' && !isEmpty ? 'trend-bar--grace' : ''}`}
-                      style={{ height: `${pct}%` }}
-                    />
-                  </span>
-                  <span
-                    className={`trend-day-label ${row.isToday ? 'trend-day-label--today' : ''}`}
-                  >
-                    {row.shortLabel}
-                  </span>
+                  Calm
                 </button>
-              );
-            })}
-          </div>
-
-          <div className="trend-detail-strip">
-            <span className="trend-detail-date">{selectedTrendDay.fullLabel}</span>
-            <div className="trend-detail-stats tabular">
-              <span>{formatDuration(selectedTrendDay.summary.calmSeconds)} calm</span>
-              {selectedTrendDay.standingPct !== null && (
-                <>
-                  <span>·</span>
-                  <span>{selectedTrendDay.standingPct}% standing</span>
-                </>
-              )}
-              <span>·</span>
-              <span>{selectedTrendDay.summary.urgesRedirected} caught</span>
-              <span>·</span>
-              <span>{totalFaceTouches(selectedTrendDay.summary.faceTouches)} touches</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* High-Risk Time-of-Day Heatmap */}
-      <section className="editorial-section" aria-label="Time of day patterns">
-        <div className="section-head-row">
-          <h2 className="section-heading">When urges cluster</h2>
-          <span className="section-meta">
-            {heatmapData.totalUrges > 0
-              ? `${heatmapData.totalUrges} noticed moments mapped`
-              : 'Fills in as moments are noticed'}
-          </span>
-        </div>
-
-        <div className="heatmap-card">
-          <div className="heatmap-grid" role="list" aria-label="Time of day urge heatmap">
-            {heatmapData.blocks.map((block) => {
-              const intensity =
-                block.count === 0 ? 0 : Math.max(0.18, block.count / heatmapData.maxCount);
-              return (
-                <div
-                  key={block.id}
-                  role="listitem"
-                  className="heatmap-cell"
-                  style={{
-                    backgroundColor:
-                      intensity === 0
-                        ? undefined
-                        : `rgba(201, 100, 66, ${(intensity * 0.42).toFixed(2)})`,
-                  }}
+                <button
+                  type="button"
+                  className={`segmented-btn ${metric === 'standing' ? 'segmented-btn--active' : ''}`}
+                  onClick={() => setMetric('standing')}
                 >
-                  <span className="heatmap-count tabular">{block.count}</span>
-                  <span className="heatmap-window">{block.label}</span>
-                  <span className="heatmap-name">{block.name}</span>
+                  Standing
+                </button>
+                <button
+                  type="button"
+                  className={`segmented-btn ${metric === 'redirected' ? 'segmented-btn--active' : ''}`}
+                  onClick={() => setMetric('redirected')}
+                >
+                  Caught
+                </button>
+                <button
+                  type="button"
+                  className={`segmented-btn ${metric === 'touches' ? 'segmented-btn--active' : ''}`}
+                  onClick={() => setMetric('touches')}
+                >
+                  Touches
+                </button>
+              </div>
+            </div>
+
+            <div className="trend-card trend-card--flat">
+              <div className="trend-bars" role="list" aria-label="14 day bar chart">
+                {last14Days.map((row, idx) => {
+                  const val = chartValues.raw[idx];
+                  const isEmpty = val === 0;
+                  const pct = isEmpty
+                    ? 5
+                    : Math.max(10, Math.round((val / chartValues.maxVal) * 100));
+                  const isSelected = row.dateKey === selectedTrendDay.dateKey;
+
+                  return (
+                    <button
+                      key={row.dateKey}
+                      type="button"
+                      role="listitem"
+                      className={`trend-col ${isSelected ? 'trend-col--selected' : ''}`}
+                      aria-label={`${row.fullLabel}: ${formatDuration(row.summary.calmSeconds)} calm`}
+                      onClick={() => setSelectedTrendKey(row.dateKey)}
+                    >
+                      <span className="trend-bar-track">
+                        <span
+                          className={`trend-bar ${row.isToday ? 'trend-bar--today' : ''} ${
+                            isEmpty ? 'trend-bar--empty' : ''
+                          } ${metric === 'standing' && !isEmpty ? 'trend-bar--grace' : ''}`}
+                          style={{ height: `${pct}%` }}
+                        />
+                      </span>
+                      <span
+                        className={`trend-day-label ${row.isToday ? 'trend-day-label--today' : ''}`}
+                      >
+                        {row.shortLabel}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="trend-detail-strip">
+                <span className="trend-detail-date">{selectedTrendDay.fullLabel}</span>
+                <div className="trend-detail-stats tabular">
+                  <span>{formatDuration(selectedTrendDay.summary.calmSeconds)} calm</span>
+                  {selectedTrendDay.standingPct !== null && (
+                    <>
+                      <span>·</span>
+                      <span>{selectedTrendDay.standingPct}% standing</span>
+                    </>
+                  )}
+                  <span>·</span>
+                  <span>{selectedTrendDay.summary.urgesRedirected} caught</span>
+                  <span>·</span>
+                  <span>{totalFaceTouches(selectedTrendDay.summary.faceTouches)} touches</span>
                 </div>
-              );
-            })}
-          </div>
-
-          {heatmapData.peak ? (
-            <p className="heatmap-insight">
-              Urges cluster most during <strong>{heatmapData.peak.name.toLowerCase()}</strong> (
-              {heatmapData.peak.label}). Changing between sitting and standing or taking a 60-second
-              breath right before that window helps break autopilot early.
-            </p>
-          ) : (
-            <p className="heatmap-insight">
-              As Still Rhythm catches urges or logs grace recoveries, this map highlights your
-              toughest hours so you can plan small resets ahead of time.
-            </p>
-          )}
-
-          {heatmapData.topTags.length > 0 && (
-            <div className="trigger-tags-strip">
-              <span className="trigger-tags-label">Common contexts</span>
-              <div className="tag-row">
-                {heatmapData.topTags.map(([tag, count]) => (
-                  <span key={tag} className="trigger-pill">
-                    {tag} <span className="tabular">· {count}</span>
-                  </span>
-                ))}
               </div>
             </div>
-          )}
-        </div>
-      </section>
-
-      {/* Day-by-Day History Log */}
-      <section className="editorial-section" aria-label="Day-by-day history">
-        <div className="section-head-row">
-          <h2 className="section-heading">Day-by-day log</h2>
-          <span className="section-meta">{historyRows.length} days</span>
-        </div>
-
-        <div className="history-table">
-          <div className="history-header-row" aria-hidden="true">
-            <span>Day</span>
-            <span>Calm</span>
-            <span>Standing</span>
-            <span>Shifts</span>
-            <span>Touches</span>
           </div>
+        </details>
 
-          {historyRows.map((row) => (
-            <div
-              key={row.dateKey}
-              className={`history-row ${row.isToday ? 'history-row--today' : ''}`}
-            >
-              <div className="history-day-cell">
-                <span className="history-day-name">{row.fullLabel}</span>
-                {row.deltaCalmSec !== null && row.deltaCalmSec !== 0 && (
-                  <span
-                    className={`delta-badge ${
-                      row.deltaCalmSec > 0 ? 'delta-badge--up' : 'delta-badge--down'
-                    }`}
-                  >
-                    {formatDeltaCalm(row.deltaCalmSec)}
-                  </span>
-                )}
+        <details className="streamline-drawer">
+          <summary className="streamline-drawer-summary">
+            <span>When urges cluster</span>
+            <span className="streamline-drawer-meta">
+              {heatmapData.peak
+                ? `Peak: ${heatmapData.peak.name} (${heatmapData.peak.label})`
+                : heatmapData.totalUrges > 0
+                  ? `${heatmapData.totalUrges} moments`
+                  : 'Builds over time'}
+            </span>
+          </summary>
+          <div className="streamline-drawer-body">
+            <div className="heatmap-card heatmap-card--flat">
+              <div className="heatmap-grid" role="list" aria-label="Time of day urge heatmap">
+                {heatmapData.blocks.map((block) => {
+                  const intensity =
+                    block.count === 0 ? 0 : Math.max(0.18, block.count / heatmapData.maxCount);
+                  return (
+                    <div
+                      key={block.id}
+                      role="listitem"
+                      className="heatmap-cell"
+                      style={{
+                        backgroundColor:
+                          intensity === 0
+                            ? undefined
+                            : `rgba(201, 100, 66, ${(intensity * 0.42).toFixed(2)})`,
+                      }}
+                    >
+                      <span className="heatmap-count tabular">{block.count}</span>
+                      <span className="heatmap-window">{block.label}</span>
+                      <span className="heatmap-name">{block.name}</span>
+                    </div>
+                  );
+                })}
               </div>
-              <span className="tabular">{formatShortDuration(row.summary.calmSeconds)}</span>
-              <span className="tabular">
-                {row.standingPct !== null ? `${row.standingPct}%` : '—'}
-              </span>
-              <span className="tabular">{totalReliefMoves(row.summary)}</span>
-              <span className="tabular history-rate">
-                {totalFaceTouches(row.summary.faceTouches)}
-              </span>
+
+              {heatmapData.peak ? (
+                <p className="heatmap-insight">
+                  Urges cluster most during <strong>{heatmapData.peak.name.toLowerCase()}</strong> (
+                  {heatmapData.peak.label}). Switching position or taking a 60-second breath right
+                  before that window helps break autopilot early.
+                </p>
+              ) : (
+                <p className="heatmap-insight">
+                  As moments are caught, this highlights your toughest hours so you can plan small
+                  resets ahead of time.
+                </p>
+              )}
+
+              {heatmapData.topTags.length > 0 && (
+                <div className="trigger-tags-strip">
+                  <span className="trigger-tags-label">Common contexts</span>
+                  <div className="tag-row">
+                    {heatmapData.topTags.map(([tag, count]) => (
+                      <span key={tag} className="trigger-pill">
+                        {tag} <span className="tabular">· {count}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      </section>
+          </div>
+        </details>
+
+        <details className="streamline-drawer">
+          <summary className="streamline-drawer-summary">
+            <span>Day-by-day history log</span>
+            <span className="streamline-drawer-meta tabular">{historyRows.length} days</span>
+          </summary>
+          <div className="streamline-drawer-body">
+            <div className="history-table">
+              <div className="history-header-row" aria-hidden="true">
+                <span>Day</span>
+                <span>Calm</span>
+                <span>Standing</span>
+                <span>Shifts</span>
+                <span>Touches</span>
+              </div>
+
+              {historyRows.map((row) => (
+                <div
+                  key={row.dateKey}
+                  className={`history-row ${row.isToday ? 'history-row--today' : ''}`}
+                >
+                  <div className="history-day-cell">
+                    <span className="history-day-name">{row.fullLabel}</span>
+                    {row.deltaCalmSec !== null && row.deltaCalmSec !== 0 && (
+                      <span
+                        className={`delta-badge ${
+                          row.deltaCalmSec > 0 ? 'delta-badge--up' : 'delta-badge--down'
+                        }`}
+                      >
+                        {formatDeltaCalm(row.deltaCalmSec)}
+                      </span>
+                    )}
+                  </div>
+                  <span className="tabular">{formatShortDuration(row.summary.calmSeconds)}</span>
+                  <span className="tabular">
+                    {row.standingPct !== null ? `${row.standingPct}%` : '—'}
+                  </span>
+                  <span className="tabular">{totalReliefMoves(row.summary)}</span>
+                  <span className="tabular history-rate">
+                    {totalFaceTouches(row.summary.faceTouches)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </details>
+      </div>
         </>
       )}
     </div>

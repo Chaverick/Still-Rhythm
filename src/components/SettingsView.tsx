@@ -39,6 +39,7 @@ interface SettingsViewProps {
   onCaptureNeutralPosture: () => void;
   onCapturePostureReference: (which: PostureState) => void;
   onCalibrateVoice: () => void;
+  onToggleDesktopBanner: () => void;
   onToggleTheme: () => void;
   onTestStage1: () => void;
   onTestStage2: () => void;
@@ -77,6 +78,7 @@ export function SettingsView({
   onCaptureNeutralPosture,
   onCapturePostureReference,
   onCalibrateVoice,
+  onToggleDesktopBanner,
   onToggleTheme,
   onTestStage1,
   onTestStage2,
@@ -147,22 +149,16 @@ export function SettingsView({
           ===================================================================== */}
       {activeSection === 'voice' && (
         <>
-          <section className="editorial-section" aria-label="Voice comfort and talking detection">
-            <div className="section-head-row">
-              <h2 className="section-heading">Voice comfort &amp; talking detection</h2>
-              <span className="section-meta">100% local · Never recorded</span>
-            </div>
-
+          <section className="editorial-section" aria-label="Voice comfort and rhythm">
             <div className="settings-card">
               <div
                 className="toggle-row toggle-row--compact"
                 style={{ borderTop: 'none', paddingTop: 0 }}
               >
                 <div className="toggle-copy">
-                  <div className="toggle-title">Use microphone for voice level (dB) &amp; talking</div>
+                  <div className="toggle-title">Microphone voice meter (dB) &amp; talking pause</div>
                   <p className="toggle-desc">
-                    Measures live speaking loudness in memory so you can stay in a comfortable range,
-                    and pairs with lip movement so talking in meetings never inflates restlessness.
+                    100% local in memory — shows your loudness bar and pauses restlessness while speaking.
                   </p>
                 </div>
                 <button
@@ -180,20 +176,15 @@ export function SettingsView({
 
               <div className="posture-cal-box">
                 <div className="slider-head">
-                  <span className="slider-label">Personal voice calibration</span>
+                  <span className="slider-label">Personal voice comfort calibration</span>
                   <span className="slider-value tabular">
                     {rhythm.micState === 'active'
                       ? `Live: ${rhythm.voiceDb} dB`
                       : settings.voiceCalOffsetDb !== 0
                         ? `Tuned (${settings.voiceCalOffsetDb > 0 ? '+' : ''}${settings.voiceCalOffsetDb} dB)`
-                        : 'Default mic scale'}
+                        : 'Default scale'}
                   </span>
                 </div>
-                <p className="toggle-desc">
-                  Because every Mac or Logitech microphone has slightly different sensitivity, speak
-                  at your natural comfortable volume for 3 seconds to center the green zone around
-                  your voice.
-                </p>
                 <div className="welcome-actions">
                   <button
                     type="button"
@@ -202,7 +193,7 @@ export function SettingsView({
                     disabled={voiceCalibrating}
                     onClick={onCalibrateVoice}
                   >
-                    {voiceCalibrating ? 'Listening for 3 seconds…' : 'Set my comfortable voice (3s)'}
+                    {voiceCalibrating ? 'Listening (3s)…' : 'Set my comfortable voice (3s)'}
                   </button>
                   {settings.voiceCalOffsetDb !== 0 && (
                     <button
@@ -216,42 +207,11 @@ export function SettingsView({
                 </div>
               </div>
 
-              <label className="slider-row" htmlFor="slider-voice-ceiling">
-                <div className="slider-head">
-                  <span className="slider-label">Soft amber warning above (loudness ceiling)</span>
-                  <span className="slider-value tabular">{settings.voiceComfortMaxDb} dB</span>
-                </div>
-                <input
-                  id="slider-voice-ceiling"
-                  type="range"
-                  min={56}
-                  max={78}
-                  step={1}
-                  value={settings.voiceComfortMaxDb}
-                  onChange={(e) =>
-                    onUpdateSettings({ voiceComfortMaxDb: Number(e.target.value) })
-                  }
-                />
-              </label>
-            </div>
-          </section>
-
-          <section className="editorial-section" aria-label="Restlessness and desk rhythm">
-            <div className="section-head-row">
-              <h2 className="section-heading">Restlessness &amp; sitting/standing</h2>
-              <span className="section-meta">Calm, non-intrusive guidance</span>
-            </div>
-
-            <div className="settings-card">
-              <div
-                className="toggle-row toggle-row--compact"
-                style={{ borderTop: 'none', paddingTop: 0 }}
-              >
+              <div className="toggle-row toggle-row--compact">
                 <div className="toggle-copy">
-                  <div className="toggle-title">Offer calming techniques when restlessness rises</div>
+                  <div className="toggle-title">Suggest calming resets when restlessness rises</div>
                   <p className="toggle-desc">
-                    Quietly shows a context-matched reset card (like a 60s double-inhale sigh or
-                    hands &amp; jaw release) when restlessness stays above your comfort level.
+                    Offers a gentle breath or body reset card when restlessness stays elevated.
                   </p>
                 </div>
                 <button
@@ -270,32 +230,11 @@ export function SettingsView({
                 </button>
               </div>
 
-              <label className="slider-row" htmlFor="slider-restless-threshold">
-                <div className="slider-head">
-                  <span className="slider-label">Suggest a calming reset above</span>
-                  <span className="slider-value tabular">
-                    {settings.restlessnessThreshold} / 100
-                  </span>
-                </div>
-                <input
-                  id="slider-restless-threshold"
-                  type="range"
-                  min={45}
-                  max={85}
-                  step={5}
-                  value={settings.restlessnessThreshold}
-                  onChange={(e) =>
-                    onUpdateSettings({ restlessnessThreshold: Number(e.target.value) })
-                  }
-                />
-              </label>
-
               <div className="toggle-row toggle-row--compact">
                 <div className="toggle-copy">
                   <div className="toggle-title">Quiet sitting &amp; standing guide</div>
                   <p className="toggle-desc">
-                    Displays a soft rhythm bar showing how long you&rsquo;ve been sitting or
-                    standing and tracks your daily balance at your desk.
+                    Tracks your daily balance and stretch timer at your desk without notifications.
                   </p>
                 </div>
                 <button
@@ -311,8 +250,57 @@ export function SettingsView({
                   <span className="switch-thumb" />
                 </button>
               </div>
+            </div>
+          </section>
 
+          <details className="streamline-drawer">
+            <summary className="streamline-drawer-summary">
+              <span>Fine-tune thresholds &amp; windows</span>
+              <span className="streamline-drawer-meta tabular">
+                Max {settings.voiceComfortMaxDb} dB · Sit {settings.sitWindowMinutes}m / Stand{' '}
+                {settings.standWindowMinutes}m
+              </span>
+            </summary>
+            <div className="streamline-drawer-body">
               <div className="sliders-grid">
+                <label className="slider-row" htmlFor="slider-voice-ceiling">
+                  <div className="slider-head">
+                    <span className="slider-label">Voice amber warning above</span>
+                    <span className="slider-value tabular">{settings.voiceComfortMaxDb} dB</span>
+                  </div>
+                  <input
+                    id="slider-voice-ceiling"
+                    type="range"
+                    min={56}
+                    max={78}
+                    step={1}
+                    value={settings.voiceComfortMaxDb}
+                    onChange={(e) =>
+                      onUpdateSettings({ voiceComfortMaxDb: Number(e.target.value) })
+                    }
+                  />
+                </label>
+
+                <label className="slider-row" htmlFor="slider-restless-threshold">
+                  <div className="slider-head">
+                    <span className="slider-label">Suggest calm reset above</span>
+                    <span className="slider-value tabular">
+                      {settings.restlessnessThreshold} / 100
+                    </span>
+                  </div>
+                  <input
+                    id="slider-restless-threshold"
+                    type="range"
+                    min={45}
+                    max={85}
+                    step={5}
+                    value={settings.restlessnessThreshold}
+                    onChange={(e) =>
+                      onUpdateSettings({ restlessnessThreshold: Number(e.target.value) })
+                    }
+                  />
+                </label>
+
                 <label className="slider-row" htmlFor="slider-sit-window">
                   <div className="slider-head">
                     <span className="slider-label">Gentle sitting window</span>
@@ -350,49 +338,18 @@ export function SettingsView({
                 </label>
               </div>
             </div>
-          </section>
+          </details>
         </>
       )}
 
       {/* =====================================================================
-          SUB-TAB 3: Alerts & Window (Name, eyebrow cues, sound, Auto-PiP)
+          SUB-TAB 3: Alerts & Window (Visual cues for muted audio, chimes, Auto-PiP)
           ===================================================================== */}
       {activeSection === 'alerts' && (
         <>
-          <section className="editorial-section" aria-label="Personalization">
-            <div className="section-head-row">
-              <h2 className="section-heading">Your name</h2>
-              <span className="section-meta">Optional · Stored locally</span>
-            </div>
-
-            <div className="settings-card">
-              <label htmlFor="input-user-name" className="slider-label">
-                First name or nickname for gentle cues &amp; morning summaries
-              </label>
-              <input
-                id="input-user-name"
-                type="text"
-                className="editorial-input"
-                maxLength={32}
-                placeholder="e.g. Alex"
-                value={settings.userName}
-                onChange={(e) => onUpdateSettings({ userName: e.target.value })}
-              />
-              <p className="settings-preview-note">
-                {trimmedName ? (
-                  <>
-                    Preview: <em>“{trimmedName}, let the urge crest and pass.”</em>
-                  </>
-                ) : (
-                  'Add your name so Still Rhythm can gently address you when your hand lifts.'
-                )}
-              </p>
-            </div>
-          </section>
-
           <section className="editorial-section" aria-label="Eyebrow awareness cues">
             <div className="section-head-row">
-              <h2 className="section-heading">Eyebrow awareness cues</h2>
+              <h2 className="section-heading">Awareness cues &amp; muted-audio visibility</h2>
               <div className="settings-inline-actions">
                 <button
                   type="button"
@@ -400,7 +357,7 @@ export function SettingsView({
                   className="text-link-btn"
                   onClick={onTestStage1}
                 >
-                  Test glow &amp; chime
+                  Test cue
                 </button>
                 <span className="meta-dot" aria-hidden="true">
                   ·
@@ -416,8 +373,36 @@ export function SettingsView({
               </div>
             </div>
 
-            <div className="toggle-list">
-              <div className="toggle-row">
+            <div className="settings-card">
+              <div
+                className="toggle-row toggle-row--compact"
+                style={{ borderTop: 'none', paddingTop: 0 }}
+              >
+                <div className="toggle-copy">
+                  <div className="toggle-title">
+                    Silent Mac desktop banner{' '}
+                    <span className="rhythm-quiet-tag">Best when muted / no earphones</span>
+                  </div>
+                  <p className="toggle-desc">
+                    Slides a brief visual banner in the top-right corner over any Mac app — works
+                    even when your speakers are muted. (Glowing orange tab icon &amp; pulsing
+                    mini-window are always on.)
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  id="toggle-desktop-banner"
+                  role="switch"
+                  aria-checked={settings.desktopVisualBanner}
+                  aria-label="Toggle silent desktop visual banner"
+                  className={`switch ${settings.desktopVisualBanner ? 'switch--on' : ''}`}
+                  onClick={onToggleDesktopBanner}
+                >
+                  <span className="switch-thumb" />
+                </button>
+              </div>
+
+              <div className="toggle-row toggle-row--compact">
                 <div className="toggle-copy">
                   <div className="toggle-title">
                     Stage 1 · Edge glow &amp; singing bowl{' '}
@@ -426,8 +411,7 @@ export function SettingsView({
                     </span>
                   </div>
                   <p className="toggle-desc">
-                    Warm peripheral screen glow and soft chime, with a 5-second auto-catch when you
-                    lower your hand.
+                    Warm peripheral glow &amp; chime with 5s auto-catch when you lower your hand.
                   </p>
                 </div>
                 <button
@@ -443,7 +427,7 @@ export function SettingsView({
                 </button>
               </div>
 
-              <div className="toggle-row">
+              <div className="toggle-row toggle-row--compact">
                 <div className="toggle-copy">
                   <div className="toggle-title">
                     Stage 2 · 60s hand-reset pause{' '}
@@ -452,8 +436,7 @@ export function SettingsView({
                     </span>
                   </div>
                   <p className="toggle-desc">
-                    Calm pause sheet with glowing light, visual hand guide, auto-catch, Grace
-                    recovery, and False alarm.
+                    Glowing pause sheet with hand guide, Grace recovery, and False alarm.
                   </p>
                 </div>
                 <button
@@ -469,12 +452,11 @@ export function SettingsView({
                 </button>
               </div>
 
-              <div className="toggle-row">
+              <div className="toggle-row toggle-row--compact">
                 <div className="toggle-copy">
                   <div className="toggle-title">Singing-bowl chime audio</div>
                   <p className="toggle-desc">
-                    Synthesized locally via Web Audio. Stays active even in meeting mode unless you
-                    turn it off here.
+                    Stays active in meetings too unless muted here.
                   </p>
                 </div>
                 <button
@@ -490,12 +472,11 @@ export function SettingsView({
                 </button>
               </div>
 
-              <div className="toggle-row">
+              <div className="toggle-row toggle-row--compact">
                 <div className="toggle-copy">
-                  <div className="toggle-title">Repeat soft chime during pause alert</div>
+                  <div className="toggle-title">Repeat soft chime during 60s pause</div>
                   <p className="toggle-desc">
-                    Gently repeats the singing bowl every few seconds alongside the glowing light
-                    until you respond or mute it.
+                    Gently repeats every few seconds until you respond.
                   </p>
                 </div>
                 <button
@@ -512,27 +493,16 @@ export function SettingsView({
                   <span className="switch-thumb" />
                 </button>
               </div>
-            </div>
-          </section>
 
-          <section className="editorial-section" aria-label="Floating mini-window">
-            <div className="section-head-row">
-              <h2 className="section-heading">Floating mini-window</h2>
-            </div>
-
-            <div className="settings-card">
-              <div
-                className="toggle-row toggle-row--compact"
-                style={{ borderTop: 'none', paddingTop: 0 }}
-              >
+              <div className="toggle-row toggle-row--compact">
                 <div className="toggle-copy">
-                  <div className="toggle-title">Auto-float when switching browser tabs</div>
+                  <div className="toggle-title">Auto-float mini-window on tab switch</div>
                   <p className="toggle-desc">
                     {autoPipPermission === 'denied'
-                      ? 'Currently blocked in Chrome site settings. Click the tune icon left of the address bar and allow "Automatic picture-in-picture".'
+                      ? 'Blocked in Chrome site settings — click the icon left of the address bar to allow Automatic picture-in-picture.'
                       : autoPipSupported
-                        ? 'When a session is running and you switch browser tabs, Still Rhythm pops out automatically. To stay on top of other desktop apps (like Slack or Notes), click "Float mini-window" once.'
-                        : 'Supported automatically on Desktop Chrome & Edge. In other browsers, click "Float mini-window" directly.'}
+                        ? 'Pops out automatically when you change browser tabs.'
+                        : 'Click Mini-window on Today to float over other apps.'}
                   </p>
                 </div>
                 <button
@@ -551,6 +521,29 @@ export function SettingsView({
               </div>
             </div>
           </section>
+
+          <details className="streamline-drawer">
+            <summary className="streamline-drawer-summary">
+              <span>Your name</span>
+              <span className="streamline-drawer-meta">
+                {trimmedName || 'Optional · used in gentle cues'}
+              </span>
+            </summary>
+            <div className="streamline-drawer-body">
+              <label htmlFor="input-user-name" className="slider-label" style={{ display: 'block', marginBottom: 8 }}>
+                First name or nickname (stored locally)
+              </label>
+              <input
+                id="input-user-name"
+                type="text"
+                className="editorial-input"
+                maxLength={32}
+                placeholder="e.g. Alex"
+                value={settings.userName}
+                onChange={(e) => onUpdateSettings({ userName: e.target.value })}
+              />
+            </div>
+          </details>
         </>
       )}
 

@@ -7,6 +7,7 @@ import type {
   FiveMinBucket,
   NoteEntry,
   PostureCalibration,
+  PostureState,
   StillSettings,
   ThemeMode,
 } from '../types';
@@ -18,6 +19,7 @@ const KEYS = {
   notes: 'stillrhythm:notes:v1',
   buckets: 'stillrhythm:buckets:v1',
   calibration: 'stillrhythm:calibration:v1',
+  postureStretch: 'stillrhythm:posture-stretch:v1',
   dismissedSummary: 'stillrhythm:dismissed-summary:v1',
   migratedFromStill: 'stillrhythm:migrated-from-still:v1',
   theme: 'stillrhythm:theme',
@@ -226,6 +228,7 @@ export const DEFAULT_SETTINGS: StillSettings = {
   stage2Enabled: true,
   soundEnabled: true,
   stage2RepeatChime: true,
+  desktopVisualBanner: false,
   autoPipOnTabSwitch: true,
   stage1DwellSec: 1.2,
   stage2DwellSec: 2.6,
@@ -727,4 +730,36 @@ export function markMigratedFromStill(): void {
   } catch {
     // ignore
   }
+}
+
+export interface PersistedPostureStretch {
+  postureState: PostureState;
+  boutStartWallMs: number;
+  updatedAt: number;
+  dateKey: string;
+}
+
+const POSTURE_STRETCH_MAX_AGE_MS = 30 * 60 * 1000; // preserve stretch across refreshes up to 30m
+
+export function loadPostureStretch(nowWallMs: number = Date.now()): PersistedPostureStretch | null {
+  const saved = readJson<PersistedPostureStretch | null>(KEYS.postureStretch, null);
+  if (!saved) return null;
+  if (saved.postureState !== 'sitting' && saved.postureState !== 'standing') return null;
+  if (saved.dateKey !== getLocalDateKey(nowWallMs)) return null;
+  if (nowWallMs - saved.updatedAt > POSTURE_STRETCH_MAX_AGE_MS) return null;
+  if (saved.boutStartWallMs > nowWallMs) return null;
+  return saved;
+}
+
+export function savePostureStretch(
+  postureState: PostureState,
+  boutStartWallMs: number,
+  nowWallMs: number = Date.now()
+): void {
+  writeJson<PersistedPostureStretch>(KEYS.postureStretch, {
+    postureState,
+    boutStartWallMs,
+    updatedAt: nowWallMs,
+    dateKey: getLocalDateKey(nowWallMs),
+  });
 }

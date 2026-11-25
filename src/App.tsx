@@ -11,6 +11,7 @@ import { usePictureInPicture } from './hooks/usePictureInPicture';
 import { useStillSession, type RhythmTickSample } from './hooks/useStillSession';
 import { unlockAudio } from './lib/audio';
 import { buildDailyStory } from './lib/patterns';
+import { requestDesktopBannerPermission, setTabAlertVisual } from './lib/visualAlerts';
 import {
   clearAllLocalData,
   createId,
@@ -755,6 +756,38 @@ export function App() {
     });
   }, [session, updateSettings]);
 
+  const handleToggleDesktopBanner = useCallback(async () => {
+    if (settings.desktopVisualBanner) {
+      updateSettings({ desktopVisualBanner: false });
+      return;
+    }
+    const perm = await requestDesktopBannerPermission();
+    if (perm === 'granted') {
+      updateSettings({ desktopVisualBanner: true });
+      session.showWhisper('Silent visual desktop banners enabled · works even when muted', undefined, 4200);
+    } else if (perm === 'denied') {
+      updateSettings({ desktopVisualBanner: false });
+      session.showWhisper(
+        'Allow Notifications for chaverick.github.io in Chrome site settings to show visual banners',
+        undefined,
+        5200
+      );
+    } else {
+      updateSettings({ desktopVisualBanner: false });
+      session.showWhisper('Desktop banners are not supported in this browser', undefined, 3800);
+    }
+  }, [session, settings.desktopVisualBanner, updateSettings]);
+
+  // Glowing amber tab favicon & title beacon (works even when Mac audio is muted!)
+  useEffect(() => {
+    const isAlert = pauseSheetState.open || session.edgeGlowActive;
+    const stage = pauseSheetState.open ? 'stage2' : 'stage1';
+    setTabAlertVisual(isAlert, stage, pipWindowRef);
+    return () => {
+      if (isAlert) setTabAlertVisual(false, 'stage1', pipWindowRef);
+    };
+  }, [pauseSheetState.open, session.edgeGlowActive, pipWindowRef]);
+
   const glowIntensity = pauseSheetState.open
     ? 'prominent'
     : session.edgeGlowActive
@@ -1019,6 +1052,7 @@ export function App() {
             onCaptureNeutralPosture={session.captureNeutralPosture}
             onCapturePostureReference={session.capturePostureReference}
             onCalibrateVoice={handleCalibrateVoice}
+            onToggleDesktopBanner={() => void handleToggleDesktopBanner()}
             onToggleTheme={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
             onTestStage1={session.triggerTestCue}
             onTestStage2={() => {

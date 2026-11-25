@@ -152,7 +152,7 @@ export function PipWindowContent({
         stage2AlertOpen ? 'pip-shell--alert' : isGlowing ? 'pip-shell--stage1' : ''
       }`}
     >
-      <div className="pip-top-row">
+      <div className="pip-top-row pip-top-row--slim">
         <div className="pip-brand">
           <span
             className={`pip-orb ${
@@ -165,13 +165,12 @@ export function PipWindowContent({
                     : ''
             }`}
           />
-          <span className="pip-title">Still Rhythm</span>
           <span className="pip-mini-status tabular">
-            {confirmText} · {statusChip}
+            {confirmText} · <strong>{statusChip}</strong>
           </span>
         </div>
-        <button type="button" className="text-link-btn text-link-btn--muted" onClick={onClosePiP}>
-          Tab
+        <button type="button" className="text-link-btn text-link-btn--muted pip-tab-btn" onClick={onClosePiP}>
+          Tab ↗
         </button>
       </div>
 
@@ -201,7 +200,7 @@ export function PipWindowContent({
         <div className="pip-pacer-wrap">
           <CyclicSighPacer
             compact
-            totalCycles={4}
+            totalCycles={5}
             onComplete={() => {
               setPacerOpen(false);
               onCompleteCalmingReset('cyclic-sigh');
@@ -233,21 +232,21 @@ export function PipWindowContent({
             </div>
           </div>
 
-          {/* 2. Explicit Sitting | Standing Toggle Button + Stretch Bar */}
+          {/* 2. Crystal-Clear Sitting | Standing Toggle + Visible Stretch Track */}
           {workContext === 'desk' && (
             <div className="pip-posture-strip">
               <div className="pip-posture-head">
-                <div className="segmented segmented--mini" role="group" aria-label="Desk position">
+                <div className="segmented segmented--mini posture-segmented" role="group" aria-label="Desk position">
                   <button
                     type="button"
-                    className={`segmented-btn ${postureState === 'sitting' ? 'segmented-btn--active' : ''}`}
+                    className={`segmented-btn ${postureState === 'sitting' ? 'segmented-btn--active segmented-btn--sit' : ''}`}
                     onClick={() => onTogglePosture('sitting')}
                   >
                     Sit
                   </button>
                   <button
                     type="button"
-                    className={`segmented-btn ${postureState === 'standing' ? 'segmented-btn--active' : ''}`}
+                    className={`segmented-btn ${postureState === 'standing' ? 'segmented-btn--active segmented-btn--stand' : ''}`}
                     onClick={() => onTogglePosture('standing')}
                   >
                     Stand
@@ -256,9 +255,9 @@ export function PipWindowContent({
                 <span className={readyToSwitch ? 'pip-posture-ready tabular' : 'pip-posture-calm tabular'}>
                   {readyToSwitch
                     ? postureState === 'sitting'
-                      ? `${boutMins}m · Rise soon`
+                      ? `${boutMins}m · Stand soon`
                       : `${boutMins}m · Sit soon`
-                    : `${boutMins}m / ${targetMins}m`}
+                    : `${postureState === 'standing' ? 'Standing' : 'Sitting'} · ${boutMins}m / ${targetMins}m`}
                 </span>
               </div>
 
@@ -285,10 +284,10 @@ export function PipWindowContent({
                   </div>
                 </div>
               ) : (
-                <div className="rhythm-bar-track">
+                <div className="rhythm-bar-track rhythm-bar-track--visible">
                   <div
                     className={`rhythm-bar-fill ${readyToSwitch ? 'rhythm-bar-fill--warm' : ''}`}
-                    style={{ width: `${Math.max(4, boutPct)}%` }}
+                    style={{ width: `${boutMins === 0 ? 0 : Math.max(6, boutPct)}%` }}
                   />
                 </div>
               )}
@@ -350,20 +349,20 @@ export function PipWindowContent({
             </div>
           </div>
 
-          {/* 4. Three Quick Action Buttons: Pause · Meeting · 60s Sigh */}
-          <div className="pip-controls">
+          {/* 4. Three Quick Action Buttons on ONE Single Row: Pause · Meeting · 60s Sigh */}
+          <div className="pip-controls pip-controls--triple">
             {isRunning ? (
-              <button type="button" className="btn btn-subtle btn-sm" onClick={onStop}>
+              <button type="button" className="btn btn-subtle btn-xs pip-action-btn" onClick={onStop}>
                 Pause
               </button>
             ) : (
-              <button type="button" className="btn btn-primary btn-sm" onClick={onStart}>
+              <button type="button" className="btn btn-primary btn-xs pip-action-btn" onClick={onStart}>
                 Begin
               </button>
             )}
             <button
               type="button"
-              className={`btn btn-sm ${inMeetingMode ? 'btn-subtle' : 'btn-ghost'}`}
+              className={`btn btn-xs pip-action-btn ${inMeetingMode ? 'btn-subtle' : 'btn-ghost'}`}
               aria-pressed={inMeetingMode}
               onClick={onToggleMeetingMode}
             >
@@ -371,7 +370,7 @@ export function PipWindowContent({
             </button>
             <button
               type="button"
-              className={`btn btn-sm ${
+              className={`btn btn-xs pip-action-btn ${
                 restlessnessLevel === 'restless' && !inMeetingMode && !isSpeaking
                   ? 'btn-primary'
                   : 'btn-ghost'

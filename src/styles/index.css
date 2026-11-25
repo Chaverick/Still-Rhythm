@@ -3665,3 +3665,390 @@ input[type='range'] {
     font-size: 13px;
   }
 }
+
+/* ==========================================================================
+   Polish Pass v2: Single-Line Hero Toolbar, Clear Sit/Stand, Luminous Breath,
+   Sleek PiP & Streamlined Drawers
+   ========================================================================== */
+
+/* Point 1: All hero controls on one crisp compact line */
+.hero-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.hero-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border-strong);
+  margin: 0 2px;
+}
+
+.segmented--compact {
+  padding: 2px;
+}
+
+.segmented--compact .segmented-btn {
+  padding: 5px 11px;
+  font-size: 12.5px;
+}
+
+.meeting-pill--compact {
+  padding: 5px 11px;
+  font-size: 12.5px;
+}
+
+/* Point 4: Top-line metrics strip right below hero */
+.metrics-strip--top {
+  padding-top: 16px;
+  padding-bottom: 16px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Point 9: Unmistakable Sit | Stand clarity in Dark & Light modes */
+.posture-segmented {
+  background: color-mix(in srgb, var(--ink) 6%, var(--bg-subtle));
+  border: 1px solid var(--border-strong);
+}
+
+.posture-segmented .segmented-btn:focus-visible,
+.pip-shell button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.posture-segmented .segmented-btn:focus:not(:focus-visible),
+.pip-shell button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.posture-segmented .segmented-btn--stand {
+  background: var(--sage);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+}
+
+.posture-segmented .segmented-btn--sit {
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Always-visible stretch progress track even at 0m */
+.rhythm-bar-track--visible {
+  height: 6px;
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  border: 1px solid var(--border);
+}
+
+/* Point 3: Sleek 1-line PiP header & 3-column single-row footer */
+.pip-shell {
+  padding: 12px 14px;
+  gap: 10px;
+}
+
+.pip-top-row--slim {
+  min-height: 22px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pip-mini-status strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.pip-tab-btn {
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.pip-controls--triple {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pip-action-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 6px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Point 7: High-visibility silent PiP peripheral alert beacon */
+.pip-shell--stage1 {
+  background: radial-gradient(
+    circle at 50% 25%,
+    rgba(232, 146, 72, 0.22) 0%,
+    var(--bg) 78%
+  );
+  box-shadow:
+    inset 0 0 0 3px rgba(232, 146, 72, 0.85),
+    inset 0 0 42px 12px rgba(232, 146, 72, 0.42);
+  animation: pip-amber-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pip-amber-pulse {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 3px rgba(232, 146, 72, 0.72),
+      inset 0 0 34px 10px rgba(232, 146, 72, 0.34);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 4px rgba(244, 168, 92, 1),
+      inset 0 0 54px 18px rgba(232, 146, 72, 0.58);
+  }
+}
+
+/* Point 10: Headspace-style Expanding Warm Orange Light Orb */
+.settings-card--breath {
+  padding: 26px 24px;
+}
+
+.sigh-pacer--luminous {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.sigh-pacer--compact.sigh-pacer--luminous {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.sigh-orb-stage {
+  position: relative;
+  width: 148px;
+  height: 148px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sigh-orb-stage--compact {
+  width: 112px;
+  height: 112px;
+}
+
+.sigh-orb-halo {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(242, 152, 76, 0.62) 0%,
+    rgba(217, 119, 87, 0.28) 52%,
+    transparent 74%
+  );
+  filter: blur(12px);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.sigh-orb-ring {
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(236, 152, 82, 0.55);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.sigh-orb--amber {
+  position: relative;
+  z-index: 2;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 38% 34%,
+    #f6b273 0%,
+    #df7d48 56%,
+    #c05b36 100%
+  );
+  color: #fff9f2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 1px solid rgba(255, 224, 192, 0.36);
+  transition: none;
+  will-change: transform, box-shadow;
+}
+
+.sigh-orb-stage--compact .sigh-orb--amber {
+  width: 78px;
+  height: 78px;
+}
+
+.sigh-orb-phase-word {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.92;
+  line-height: 1.1;
+}
+
+.sigh-orb--amber .sigh-orb-count {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  line-height: 1.1;
+  color: #fff9f2;
+}
+
+.sigh-orb-stage--compact .sigh-orb--amber .sigh-orb-count {
+  font-size: 18px;
+}
+
+.sigh-top-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.sigh-pacer--compact .sigh-top-meta-row {
+  justify-content: center;
+}
+
+.sigh-pacer--compact .sigh-actions {
+  justify-content: center;
+}
+
+.breath-audio-pill {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-subtle);
+  color: var(--ink-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.breath-audio-pill--on {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--accent);
+}
+
+/* Points 5 & 6: Streamlined Progressive-Disclosure Drawers & Rotating Tip */
+.drawer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.streamline-drawer {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.streamline-drawer-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 140ms ease;
+}
+
+.streamline-drawer-summary::-webkit-details-marker {
+  display: none;
+}
+
+.streamline-drawer-summary:hover {
+  background: var(--surface-hover);
+}
+
+.streamline-drawer-summary::after {
+  content: '▾';
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-left: 6px;
+  transition: transform 180ms ease;
+}
+
+.streamline-drawer[open] .streamline-drawer-summary::after {
+  transform: rotate(180deg);
+}
+
+.streamline-drawer-meta {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.streamline-drawer-body {
+  padding: 0 18px 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.trend-card--flat,
+.heatmap-card--flat {
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+}
+
+.tip-spotlight-card {
+  gap: 10px;
+}
+
+.tip-hand-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+@media (max-width: 600px) {
+  .hero-toolbar-sep {
+    display: none;
+  }
+
+  .sigh-pacer--luminous {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+  }
+
+  .sigh-top-meta-row,
+  .sigh-actions {
+    justify-content: center;
+  }
+
+  .tip-hand-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

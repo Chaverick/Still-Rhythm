@@ -283,3 +283,230 @@ export function playSingingBowl(variant: ChimeVariant = 'gentle'): void {
 
   playWebAudioBowl(ctx, ctx.destination, variant);
 }
+
+/**
+ * Headspace-inspired gentle Web Audio breath guide for the Cyclic Sigh pacer.
+ * - Inhale 1: warm pad + soft airy breeze smoothly rises in pitch & volume
+ * - Top-up Sip (Inhale 2): soft crystalline lift so you feel the second breath eyes-closed
+ * - Long Exhale: gently glides down and fades back to quiet stillness
+ * 100% synthesized in-memory with smooth ramps (zero pops/clicks).
+ */
+export class BreathSoundGuide {
+  private oscPrimary: OscillatorNode | null = null;
+  private oscHarmonic: OscillatorNode | null = null;
+  private noiseSource: AudioBufferSourceNode | null = null;
+  private padGain: GainNode | null = null;
+  private noiseGain: GainNode | null = null;
+  private padFilter: BiquadFilterNode | null = null;
+  private noiseFilter: BiquadFilterNode | null = null;
+  private masterGain: GainNode | null = null;
+  private active = false;
+
+  start(): boolean {
+    if (this.active) return true;
+    const ctx = getAudioContext();
+    if (!ctx) return false;
+    if (ctx.state !== 'running') {
+      ctx.resume().catch(() => {});
+    }
+
+    try {
+      const now = ctx.currentTime;
+      const target = videoPiPAudioActive && pipAudioDest ? pipAudioDest : ctx.destination;
+
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0.0001, now);
+      master.gain.linearRampToValueAtTime(1.0, now + 0.15);
+      master.connect(target);
+
+      // Warm velvety harmonic pad (2 soft sine/triangle voices)
+      const padFilter = ctx.createBiquadFilter();
+      padFilter.type = 'lowpass';
+      padFilter.frequency.setValueAtTime(360, now);
+      padFilter.Q.setValueAtTime(0.7, now);
+
+      const padGain = ctx.createGain();
+      padGain.gain.setValueAtTime(0.0001, now);
+
+      const osc1 = ctx.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(220, now);
+
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(330, now); // soft 5th harmonic
+      const osc2Mix = ctx.createGain();
+      osc2Mix.gain.setValueAtTime(0.22, now);
+
+      osc1.connect(padGain);
+      osc2.connect(osc2Mix);
+      osc2Mix.connect(padGain);
+      padGain.connect(padFilter);
+      padFilter.connect(master);
+
+      // Subtle filtered "ocean breath" air bed
+      const noiseLen = ctx.sampleRate * 2;
+      const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+      const data = noiseBuf.getChannelData(0);
+      let b0 = 0;
+      let b1 = 0;
+      let b2 = 0;
+      for (let i = 0; i < noiseLen; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.997 * b0 + white * 0.029;
+        b1 = 0.985 * b1 + white * 0.032;
+        b2 = 0.95 * b2 + white * 0.048;
+        data[i] = (b0 + b1 + b2 + white * 0.015) * 0.6;
+      }
+
+      const noiseSrc = ctx.createBufferSource();
+      noiseSrc.buffer = noiseBuf;
+      noiseSrc.loop = true;
+
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.setValueAtTime(320, now);
+      noiseFilter.Q.setValueAtTime(0.9, now);
+
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.0001, now);
+
+      noiseSrc.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(master);
+
+      osc1.start(now);
+      osc2.start(now);
+      noiseSrc.start(now);
+
+      this.oscPrimary = osc1;
+      this.oscHarmonic = osc2;
+      this.noiseSource = noiseSrc;
+      this.padGain = padGain;
+      this.noiseGain = noiseGain;
+      this.padFilter = padFilter;
+      this.noiseFilter = noiseFilter;
+      this.masterGain = master;
+      this.active = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  cuePhase(phase: 'inhale-1' | 'inhale-2' | 'exhale', durationSec: number): void {
+    if (!this.active) {
+      if (!this.start()) return;
+    }
+    const ctx = getAudioContext();
+    if (!ctx || !this.oscPrimary || !this.oscHarmonic || !this.padGain || !this.padFilter || !this.noiseGain || !this.noiseFilter) {
+      return;
+    }
+    if (ctx.state !== 'running') {
+      ctx.resume().catch(() => {});
+    }
+
+    const now = ctx.currentTime;
+    const end = now + Math.max(0.4, durationSec);
+
+    const cancelAndAnchor = (param: AudioParam) => {
+      param.cancelScheduledValues(now);
+      param.setValueAtTime(Math.max(0.0001, param.value), now);
+    };
+
+    cancelAndAnchor(this.oscPrimary.frequency);
+    cancelAndAnchor(this.oscHarmonic.frequency);
+    cancelAndAnchor(this.padGain.gain);
+    cancelAndAnchor(this.padFilter.frequency);
+    cancelAndAnchor(this.noiseGain.gain);
+    cancelAndAnchor(this.noiseFilter.frequency);
+
+    if (phase === 'inhale-1') {
+      // Gentle rising swell (A3 -> D4)
+      this.oscPrimary.frequency.setValueAtTime(220, now);
+      this.oscPrimary.frequency.exponentialRampToValueAtTime(293.66, end);
+      this.oscHarmonic.frequency.setValueAtTime(330, now);
+      this.oscHarmonic.frequency.exponentialRampToValueAtTime(440, end);
+
+      this.padFilter.frequency.exponentialRampToValueAtTime(760, end);
+      this.padGain.gain.linearRampToValueAtTime(0.072, end);
+
+      this.noiseFilter.frequency.exponentialRampToValueAtTime(640, end);
+      this.noiseGain.gain.linearRampToValueAtTime(0.042, end);
+    } else if (phase === 'inhale-2') {
+      // Soft crystalline top-up sip (D4 -> E4)
+      this.oscPrimary.frequency.exponentialRampToValueAtTime(329.63, end);
+      this.oscHarmonic.frequency.exponentialRampToValueAtTime(493.88, end);
+
+      this.padFilter.frequency.exponentialRampToValueAtTime(980, end);
+      this.padGain.gain.linearRampToValueAtTime(0.095, end);
+
+      this.noiseFilter.frequency.exponentialRampToValueAtTime(860, end);
+      this.noiseGain.gain.linearRampToValueAtTime(0.055, end);
+    } else {
+      // Long, unhurried downward release (E4 -> G3) softening back to quiet
+      this.oscPrimary.frequency.exponentialRampToValueAtTime(196, end);
+      this.oscHarmonic.frequency.exponentialRampToValueAtTime(293.66, end);
+
+      this.padFilter.frequency.exponentialRampToValueAtTime(260, end);
+      this.padGain.gain.exponentialRampToValueAtTime(0.003, end);
+
+      this.noiseFilter.frequency.exponentialRampToValueAtTime(220, end);
+      this.noiseGain.gain.exponentialRampToValueAtTime(0.001, end);
+    }
+  }
+
+  finish(): void {
+    this.stop();
+    playSingingBowl('grounding');
+  }
+
+  stop(): void {
+    if (!this.active) return;
+    this.active = false;
+    const ctx = getAudioContext();
+    const osc1 = this.oscPrimary;
+    const osc2 = this.oscHarmonic;
+    const noise = this.noiseSource;
+    const master = this.masterGain;
+
+    this.oscPrimary = null;
+    this.oscHarmonic = null;
+    this.noiseSource = null;
+    this.padGain = null;
+    this.noiseGain = null;
+    this.padFilter = null;
+    this.noiseFilter = null;
+    this.masterGain = null;
+
+    if (ctx && master) {
+      try {
+        const now = ctx.currentTime;
+        master.gain.cancelScheduledValues(now);
+        master.gain.setValueAtTime(Math.max(0.0001, master.gain.value), now);
+        master.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+        window.setTimeout(() => {
+          try {
+            osc1?.stop();
+            osc2?.stop();
+            noise?.stop();
+            master.disconnect();
+          } catch {
+            // ignore
+          }
+        }, 220);
+        return;
+      } catch {
+        // fallback below
+      }
+    }
+    try {
+      osc1?.stop();
+      osc2?.stop();
+      noise?.stop();
+      master?.disconnect();
+    } catch {
+      // ignore
+    }
+  }
+}

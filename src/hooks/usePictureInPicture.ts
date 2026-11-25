@@ -457,9 +457,9 @@ export function usePictureInPicture(
       try {
         if (docPiP?.requestWindow) {
           try {
-            const win = await docPiP.requestWindow({ width: 356, height: 418 });
+            const win = await docPiP.requestWindow({ width: 344, height: 356 });
             win.document.documentElement.setAttribute('data-theme', stateRef.current.theme);
-            win.document.title = 'Still Rhythm · Floating';
+            win.document.title = 'Still Rhythm';
 
             for (const sheet of Array.from(document.styleSheets)) {
               try {
