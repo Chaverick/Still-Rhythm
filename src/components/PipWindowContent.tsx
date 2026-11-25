@@ -146,11 +146,32 @@ export function PipWindowContent({
               ? 'Stirring'
               : 'Settled';
 
+  const dwellRatio = Math.min(1, Math.max(0, dwellSec / Math.max(0.5, stage2DwellSec)));
+  const pipGlowLevel = camBroken
+    ? 0
+    : stage2AlertOpen
+      ? 1
+      : stage1Glow
+        ? Math.max(0.48, Math.min(0.88, dwellRatio))
+        : handInZone
+          ? Math.max(0.14, dwellRatio * 0.72)
+          : 0;
+
+  const pipGlowStyle: React.CSSProperties | undefined =
+    pipGlowLevel > 0.02
+      ? {
+          boxShadow: `inset 0 0 ${Math.round(24 + pipGlowLevel * 44)}px ${Math.round(
+            6 + pipGlowLevel * 14
+          )}px rgba(214, 126, 76, ${(0.14 + pipGlowLevel * 0.34).toFixed(3)})`,
+        }
+      : undefined;
+
   return (
     <div
       className={`pip-shell ${
         stage2AlertOpen ? 'pip-shell--alert' : isGlowing ? 'pip-shell--stage1' : ''
       }`}
+      style={pipGlowStyle}
     >
       <div className="pip-top-row pip-top-row--slim">
         <div className="pip-brand">

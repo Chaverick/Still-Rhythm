@@ -794,9 +794,13 @@ export function App() {
       ? 'gentle'
       : 'none';
 
+  const glowProgress = pauseSheetState.open
+    ? 1
+    : Math.min(1, session.dwellSec / Math.max(0.5, settings.stage2DwellSec));
+
   return (
     <div className="app-shell">
-      <EdgeGlow intensity={glowIntensity} />
+      <EdgeGlow intensity={glowIntensity} progress={glowProgress} />
 
       <video
         ref={session.videoRef}

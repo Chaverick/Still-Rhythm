@@ -96,7 +96,6 @@ export function TodayView({
   onStart,
   onStop,
   pipSupported,
-  autoPipSupported,
   autoPipPermission,
   pipKind,
   pipError,
@@ -388,13 +387,7 @@ export function TodayView({
           <p className="pip-helper-line">
             <strong>Auto-float is blocked in Chrome</strong> — click the site icon left of the
             address bar to allow Automatic picture-in-picture, or use{' '}
-            <strong>Float mini-window</strong> above.
-          </p>
-        )}
-        {pipSupported && autoPipSupported && autoPipPermission !== 'denied' && isRunning && !pipActive && (
-          <p className="pip-helper-line">
-            Pops out automatically on tab switch · click <strong>Float mini-window</strong> once to
-            float over other Mac apps.
+            <strong>Mini-window</strong> above.
           </p>
         )}
 

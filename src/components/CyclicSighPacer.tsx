@@ -196,12 +196,12 @@ export function CyclicSighPacer({
   const approxMinutes = Math.max(1, Math.round((cyclesTarget * 13) / 60));
 
   // Smooth editorial breathing geometry driven by breathLevel (0..1)
-  // Flat, matte, translucent — expands calmly inside a fine hairline dial
-  const innerFillScale = running ? 0.48 + breathLevel * 0.5 : 0.56;
-  const innerFillOpacity = running ? 0.14 + breathLevel * 0.24 : 0.12;
-  const auraScale = running ? 0.72 + breathLevel * 0.52 : 0.76;
-  const auraOpacity = running ? 0.16 + breathLevel * 0.44 : 0.12;
-  const ringBorderOpacity = running ? 0.32 + breathLevel * 0.55 : 0.28;
+  // Quiet, low-saturation matte terracotta clay — calm and understated
+  const innerFillScale = running ? 0.48 + breathLevel * 0.5 : 0.54;
+  const innerFillOpacity = running ? 0.06 + breathLevel * 0.14 : 0.06;
+  const auraScale = running ? 0.72 + breathLevel * 0.46 : 0.74;
+  const auraOpacity = running ? 0.06 + breathLevel * 0.24 : 0.05;
+  const ringBorderOpacity = running ? 0.2 + breathLevel * 0.34 : 0.18;
 
   return (
     <div className={`sigh-pacer sigh-pacer--luminous ${compact ? 'sigh-pacer--compact' : ''}`}>
@@ -227,8 +227,8 @@ export function CyclicSighPacer({
           className="sigh-dial-wave"
           style={{
             transform: `scale(${innerFillScale.toFixed(3)})`,
-            backgroundColor: `rgba(217, 119, 87, ${innerFillOpacity.toFixed(3)})`,
-            borderColor: `rgba(217, 119, 87, ${ringBorderOpacity.toFixed(3)})`,
+            backgroundColor: `rgba(196, 122, 92, ${innerFillOpacity.toFixed(3)})`,
+            borderColor: `rgba(196, 122, 92, ${ringBorderOpacity.toFixed(3)})`,
           }}
         />
 

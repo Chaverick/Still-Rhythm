@@ -170,10 +170,9 @@ button {
   z-index: 65;
   opacity: 1;
   box-shadow:
-    inset 0 0 0 4px rgba(236, 162, 88, 0.72),
-    inset 0 0 110px 34px rgba(232, 146, 72, 0.66),
-    inset 0 0 220px 68px rgba(209, 108, 62, 0.34);
-  animation: edge-beacon 2.4s ease-in-out infinite;
+    inset 0 0 96px 28px rgba(214, 126, 76, 0.48),
+    inset 0 0 190px 52px rgba(196, 108, 66, 0.24);
+  animation: edge-beacon 2.6s ease-in-out infinite;
 }
 
 @keyframes edge-breathe {
@@ -1977,13 +1976,12 @@ input[type='range'] {
 .pip-shell--alert {
   background: radial-gradient(
     circle at 50% 35%,
-    rgba(232, 150, 74, 0.28) 0%,
+    rgba(214, 126, 76, 0.16) 0%,
     var(--bg) 78%
   );
   box-shadow:
-    inset 0 0 0 4px rgba(236, 158, 82, 0.85),
-    inset 0 0 54px 16px rgba(232, 146, 72, 0.56);
-  animation: edge-beacon 2.2s ease-in-out infinite;
+    inset 0 0 48px 14px rgba(214, 126, 76, 0.44);
+  animation: edge-beacon 2.4s ease-in-out infinite;
 }
 
 .pip-top-row {
@@ -3783,34 +3781,17 @@ input[type='range'] {
   white-space: nowrap;
 }
 
-/* Point 7: High-visibility silent PiP peripheral alert beacon */
+/* Point 7 & 2: Smooth progressive diffused PiP glow (zero harsh solid orange border) */
 .pip-shell--stage1 {
   background: radial-gradient(
     circle at 50% 25%,
-    rgba(232, 146, 72, 0.22) 0%,
+    rgba(214, 126, 76, 0.1) 0%,
     var(--bg) 78%
   );
-  box-shadow:
-    inset 0 0 0 3px rgba(232, 146, 72, 0.85),
-    inset 0 0 42px 12px rgba(232, 146, 72, 0.42);
-  animation: pip-amber-pulse 1.5s ease-in-out infinite;
+  transition: box-shadow 220ms ease-out, background 260ms ease;
 }
 
-@keyframes pip-amber-pulse {
-  0%,
-  100% {
-    box-shadow:
-      inset 0 0 0 3px rgba(232, 146, 72, 0.72),
-      inset 0 0 34px 10px rgba(232, 146, 72, 0.34);
-  }
-  50% {
-    box-shadow:
-      inset 0 0 0 4px rgba(244, 168, 92, 1),
-      inset 0 0 54px 18px rgba(232, 146, 72, 0.58);
-  }
-}
-
-/* Point 10: Serene Editorial Concentric Breathing Dial (Warm Paper & Dark Editorial) */
+/* Point 1 & 10: Serene Editorial Concentric Breathing Dial (Warm Paper & Dark Editorial) */
 .settings-card--breath {
   padding: 26px 24px;
 }
@@ -3845,15 +3826,15 @@ input[type='range'] {
 
 .sigh-dial-aura {
   position: absolute;
-  inset: -6px;
+  inset: -4px;
   border-radius: 50%;
   background: radial-gradient(
     circle,
-    color-mix(in srgb, var(--accent) 44%, transparent) 0%,
-    color-mix(in srgb, var(--accent) 14%, transparent) 48%,
-    transparent 72%
+    rgba(196, 122, 92, 0.34) 0%,
+    rgba(196, 122, 92, 0.1) 50%,
+    transparent 74%
   );
-  filter: blur(18px);
+  filter: blur(20px);
   pointer-events: none;
   will-change: transform, opacity;
 }
@@ -3863,7 +3844,7 @@ input[type='range'] {
   inset: 6px;
   border-radius: 50%;
   border: 1px solid var(--border-strong);
-  background: color-mix(in srgb, var(--bg-subtle) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-subtle) 45%, transparent);
   pointer-events: none;
 }
 
@@ -3871,7 +3852,7 @@ input[type='range'] {
   position: absolute;
   inset: 8px;
   border-radius: 50%;
-  border: 1.5px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border: 1px solid rgba(196, 122, 92, 0.32);
   pointer-events: none;
   will-change: transform;
 }
@@ -3883,34 +3864,34 @@ input[type='range'] {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
   text-align: center;
 }
 
 .sigh-dial-kicker {
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
   color: var(--ink-muted);
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
 .sigh-dial-kicker--live {
-  color: var(--accent);
+  color: var(--ink-secondary);
 }
 
 .sigh-dial-count {
-  font-family: var(--font-serif);
-  font-size: 28px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
+  font-family: var(--font-sans);
+  font-size: 21px;
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
   color: var(--ink);
 }
 
 .sigh-dial-stage--compact .sigh-dial-count {
-  font-size: 22px;
+  font-size: 18px;
 }
 
 .sigh-top-meta-row {
