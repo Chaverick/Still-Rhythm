@@ -5,10 +5,9 @@ import type { AwarenessEvent, NoteEntry } from '../types';
 interface NotesViewProps {
   notes: NoteEntry[];
   events: AwarenessEvent[];
+  embedded?: boolean;
   onAddNote: (text: string, tags: string[]) => void;
   onDeleteNote: (id: string) => void;
-  onExportData: () => void;
-  onClearData: () => void;
 }
 
 function formatTime(ts: number): string {
@@ -40,14 +39,12 @@ function describeEvent(ev: AwarenessEvent): string {
 export function NotesView({
   notes,
   events,
+  embedded = false,
   onAddNote,
   onDeleteNote,
-  onExportData,
-  onClearData,
 }: NotesViewProps) {
   const [draft, setDraft] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [confirmClear, setConfirmClear] = useState(false);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -68,13 +65,15 @@ export function NotesView({
 
   return (
     <div className="view-stack">
-      <header className="page-intro">
-        <h1 className="page-title">Notes</h1>
-        <p className="page-lead">
-          Jot down what preceded an urge, what softened it, or how a short walk felt. Stored only on
-          this device.
-        </p>
-      </header>
+      {!embedded && (
+        <header className="page-intro">
+          <h1 className="page-title">Notes</h1>
+          <p className="page-lead">
+            Jot down what preceded an urge, what softened it, or how a short walk felt. Stored only
+            on this device.
+          </p>
+        </header>
+      )}
 
       {/* Quick Reflection Composer */}
       <form className="note-composer" onSubmit={handleSubmit}>
@@ -85,7 +84,7 @@ export function NotesView({
           id="note-textarea"
           className="note-textarea"
           rows={3}
-          placeholder="Notice what was happening just before your hand lifted…"
+          placeholder="Notice what was happening before restlessness or an urge showed up…"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
         />
@@ -104,7 +103,7 @@ export function NotesView({
         </div>
 
         <div className="composer-foot">
-          <span className="composer-hint">Private · Saved in browser local storage</span>
+          <span className="composer-hint">Private · Saved only in this browser</span>
           <button
             type="submit"
             id="btn-save-note"
@@ -164,7 +163,7 @@ export function NotesView({
 
         {recentEvents.length === 0 ? (
           <p className="empty-state">
-            Redirected urges, grace recoveries, and welcome-back check-ins will appear softly here.
+            Redirected urges, calming resets, and grace recoveries will appear softly here.
           </p>
         ) : (
           <ul className="moments-list">
@@ -175,44 +174,6 @@ export function NotesView({
               </li>
             ))}
           </ul>
-        )}
-      </section>
-
-      {/* Local Data Ownership Controls */}
-      <section className="data-foot" aria-label="Local data controls">
-        <button type="button" className="text-link-btn" onClick={onExportData}>
-          Export local JSON
-        </button>
-        {!confirmClear ? (
-          <button
-            type="button"
-            className="text-link-btn text-link-btn--muted"
-            onClick={() => setConfirmClear(true)}
-          >
-            Reset local history
-          </button>
-        ) : (
-          <span className="confirm-inline">
-            Clear all stats &amp; notes?{' '}
-            <button
-              type="button"
-              className="text-link-btn text-link-btn--danger"
-              onClick={() => {
-                onClearData();
-                setConfirmClear(false);
-              }}
-            >
-              Confirm reset
-            </button>{' '}
-            ·{' '}
-            <button
-              type="button"
-              className="text-link-btn"
-              onClick={() => setConfirmClear(false)}
-            >
-              Cancel
-            </button>
-          </span>
         )}
       </section>
     </div>

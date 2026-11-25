@@ -14,6 +14,7 @@ import type {
 
 interface CalibrationDrawerProps {
   expanded: boolean;
+  inline?: boolean;
   onToggleExpand: () => void;
   settings: StillSettings;
   calibration: PostureCalibration;
@@ -49,6 +50,7 @@ function drawMirroredPoly(
 
 export function CalibrationDrawer({
   expanded,
+  inline = false,
   onToggleExpand,
   settings,
   calibration,
@@ -284,37 +286,42 @@ export function CalibrationDrawer({
     calibration.sitFaceY !== null && calibration.standFaceY !== null;
 
   return (
-    <section className="calibration-section" aria-label="Camera, calibration and preview">
-      <button
-        type="button"
-        id="btn-toggle-calibration"
-        className="calibration-toggle"
-        aria-expanded={expanded}
-        onClick={onToggleExpand}
-      >
-        <div className="calibration-toggle-left">
-          <span className="calibration-toggle-title">Camera, desk calibration &amp; preview</span>
-          <span className="calibration-toggle-meta">
-            {sessionRunning
-              ? `${diagnostics.fps.toFixed(1)} FPS · Local${diagnostics.poseActive ? ' · Shoulders visible' : ''}`
-              : diagnostics.modelsCached
-                ? '100% local · Offline models ready'
-                : 'Pick Logitech or laptop camera · Save sitting & standing'}
+    <section
+      className={inline ? 'calibration-inline' : 'calibration-section'}
+      aria-label="Camera, calibration and preview"
+    >
+      {!inline && (
+        <button
+          type="button"
+          id="btn-toggle-calibration"
+          className="calibration-toggle"
+          aria-expanded={expanded}
+          onClick={onToggleExpand}
+        >
+          <div className="calibration-toggle-left">
+            <span className="calibration-toggle-title">Camera, desk calibration &amp; preview</span>
+            <span className="calibration-toggle-meta">
+              {sessionRunning
+                ? `${diagnostics.fps.toFixed(1)} FPS · Local${diagnostics.poseActive ? ' · Shoulders visible' : ''}`
+                : diagnostics.modelsCached
+                  ? '100% local · Offline models ready'
+                  : 'Pick Logitech or laptop camera · Save sitting & standing'}
+            </span>
+          </div>
+          <span className={`chevron ${expanded ? 'chevron--open' : ''}`} aria-hidden="true">
+            ▾
           </span>
-        </div>
-        <span className={`chevron ${expanded ? 'chevron--open' : ''}`} aria-hidden="true">
-          ▾
-        </span>
-      </button>
+        </button>
+      )}
 
-      {expanded && (
-        <div className="calibration-body">
+      {(inline || expanded) && (
+        <div className={inline ? 'calibration-body calibration-body--inline' : 'calibration-body'}>
           {/* Camera Selector (Automatic front-facing vs manual pick) */}
           {availableCameras.length > 0 && (
             <div className="camera-picker-row">
               <div className="slider-head">
                 <label htmlFor="select-camera-drawer" className="slider-label">
-                  Active camera
+                  Active front camera
                 </label>
                 {availableCameras.length >= 2 && sessionRunning && (
                   <button
@@ -332,7 +339,7 @@ export function CalibrationDrawer({
                 value={settings.selectedCameraId}
                 onChange={(e) => onSelectCamera(e.target.value)}
               >
-                <option value="">Automatic (pick camera in front of your face)</option>
+                <option value="">Automatic (scans connected cameras &amp; picks front view)</option>
                 {availableCameras.map((cam) => (
                   <option key={cam.deviceId} value={cam.deviceId}>
                     {cam.label}
@@ -342,12 +349,40 @@ export function CalibrationDrawer({
             </div>
           )}
 
+          {/* Dual-Camera Sit/Stand Accuracy Toggle */}
+          <div className="pinch-filter-row">
+            <div className="toggle-copy">
+              <span className="slider-label">Use both cameras for sit/stand accuracy</span>
+              <span className="toggle-desc">
+                Quietly cross-checks your second camera at low resolution at your desk so sitting vs.
+                standing changes are detected cleanly and auto-learned from your confirmations.
+              </span>
+            </div>
+            <button
+              type="button"
+              id="toggle-dual-camera"
+              role="switch"
+              aria-checked={settings.dualCameraSitStand}
+              aria-label="Toggle dual-camera sitting and standing detection"
+              className={`switch ${settings.dualCameraSitStand ? 'switch--on' : ''}`}
+              onClick={() =>
+                onUpdateSettings({ dualCameraSitStand: !settings.dualCameraSitStand })
+              }
+            >
+              <span className="switch-thumb" />
+            </button>
+          </div>
+
           {/* 1-Tap Desk Posture & Sit/Stand Calibration */}
           <div className="posture-cal-box">
             <div className="slider-head">
-              <span className="slider-label">Personal desk calibration (optional)</span>
+              <span className="slider-label">Manual desk calibration (optional)</span>
               <span className="slider-value">
-                {sitStandCalibrated ? 'Sit & stand saved' : 'Takes 5 seconds'}
+                {sitStandCalibrated
+                  ? calibration.confirmedSwitches > 0
+                    ? `Learned (${calibration.confirmedSwitches} confirmed)`
+                    : 'Sit & stand saved'
+                  : 'Auto-learns as you confirm'}
               </span>
             </div>
             <p className="toggle-desc">

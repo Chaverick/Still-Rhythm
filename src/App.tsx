@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { EdgeGlow } from './components/EdgeGlow';
-import { NotesView } from './components/NotesView';
 import { PatternsView } from './components/PatternsView';
 import { PauseSheet } from './components/PauseSheet';
 import { PipWindowContent } from './components/PipWindowContent';
@@ -52,6 +51,7 @@ import type {
   PostureCalibration,
   PostureState,
   ReliefMoveKind,
+  SettingsSectionId,
   StillSettings,
   TabId,
   ThemeMode,
@@ -75,6 +75,7 @@ function getInitialTheme(): ThemeMode {
 export function App() {
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [activeTab, setActiveTab] = useState<TabId>('today');
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('camera');
   const [settings, setSettings] = useState<StillSettings>(loadSettings);
   const [calibration, setCalibration] = useState<PostureCalibration>(loadCalibration);
   const [days, setDays] = useState<Record<string, DaySummary>>(loadDays);
@@ -82,7 +83,6 @@ export function App() {
   const [events, setEvents] = useState<AwarenessEvent[]>(loadEvents);
   const [notes, setNotes] = useState<NoteEntry[]>(loadNotes);
   const [dismissedSummaryDate, setDismissedSummaryDate] = useState<string>(loadDismissedSummaryDate);
-  const [calibrationOpen, setCalibrationOpen] = useState(false);
   const [pipActive, setPipActive] = useState(false);
   const [pipWindowRef, setPipWindowRef] = useState<Window | null>(null);
   const [falseAlarmTimestamps, setFalseAlarmTimestamps] = useState<number[]>([]);
@@ -739,6 +739,22 @@ export function App() {
     [days]
   );
 
+  const handleOpenCameraSetup = useCallback(() => {
+    setSettingsSection('camera');
+    setActiveTab('settings');
+  }, []);
+
+  const handleOpenVoiceSettings = useCallback(() => {
+    setSettingsSection('voice');
+    setActiveTab('settings');
+  }, []);
+
+  const handleCalibrateVoice = useCallback(() => {
+    void session.calibrateVoiceComfort((offset) => {
+      updateSettings({ voiceCalOffsetDb: offset });
+    });
+  }, [session, updateSettings]);
+
   const glowIntensity = pauseSheetState.open
     ? 'prominent'
     : session.edgeGlowActive
@@ -751,6 +767,14 @@ export function App() {
 
       <video
         ref={session.videoRef}
+        className="safari-live-video"
+        autoPlay
+        playsInline
+        muted
+        aria-hidden="true"
+      />
+      <video
+        ref={session.secondaryVideoRef}
         className="safari-live-video"
         autoPlay
         playsInline
@@ -800,13 +824,23 @@ export function App() {
             sitWindowMinutes={settings.sitWindowMinutes}
             standWindowMinutes={settings.standWindowMinutes}
             restlessnessLevel={session.rhythm.restlessnessLevel}
+            voiceDb={session.rhythm.voiceDb}
+            voiceStatus={session.rhythm.voiceStatus}
+            micState={session.rhythm.micState}
+            voiceComfortMinDb={settings.voiceComfortMinDb}
+            voiceComfortMaxDb={settings.voiceComfortMaxDb}
+            isSpeaking={session.rhythm.isSpeaking}
+            inMeetingMode={session.inMeetingMode}
+            pendingPosturePrompt={session.rhythm.pendingPosturePrompt}
             onTogglePosture={session.setPostureManual}
+            onConfirmPosturePrompt={session.confirmPosturePrompt}
+            onToggleMeetingMode={session.toggleMeetingMode}
+            onCompleteCalmingReset={handleCompleteCalmingReset}
             onStart={() => {
               pip.primeCanvasVideo();
               void session.startSession();
             }}
             onStop={session.stopSession}
-            onTestCue={session.triggerTestCue}
             onAutoCatch={handlePauseAutoCatch}
             onGraceRecovery={() => handlePauseGraceRecovery()}
             onFalseAlarm={handlePauseFalseAlarm}
@@ -815,7 +849,7 @@ export function App() {
           pip.pipContainer
         )}
 
-      {/* Minimal Claude-inspired Warm Paper Header */}
+      {/* Minimal Claude-inspired Warm Paper Header (4 calm top-level tabs) */}
       <header className="top-header">
         <div className="top-header-inner">
           <div className="brand-group">
@@ -848,21 +882,12 @@ export function App() {
             </button>
             <button
               type="button"
-              id="nav-calm-tools"
-              className={`nav-tab ${activeTab === 'calm-tools' ? 'nav-tab--active' : ''}`}
-              aria-current={activeTab === 'calm-tools' ? 'page' : undefined}
-              onClick={() => setActiveTab('calm-tools')}
+              id="nav-calm"
+              className={`nav-tab ${activeTab === 'calm' ? 'nav-tab--active' : ''}`}
+              aria-current={activeTab === 'calm' ? 'page' : undefined}
+              onClick={() => setActiveTab('calm')}
             >
-              Calm tools
-            </button>
-            <button
-              type="button"
-              id="nav-notes"
-              className={`nav-tab ${activeTab === 'notes' ? 'nav-tab--active' : ''}`}
-              aria-current={activeTab === 'notes' ? 'page' : undefined}
-              onClick={() => setActiveTab('notes')}
-            >
-              Notes
+              Calm
             </button>
             <button
               type="button"
@@ -897,18 +922,20 @@ export function App() {
             today={today}
             totalCalmSeconds={totalCalmSeconds}
             settings={settings}
-            calibration={calibration}
             rhythm={session.rhythm}
-            availableCameras={session.availableCameras}
+            inMeetingMode={session.inMeetingMode}
+            voiceCalibrating={session.voiceCalibrating}
             morningStory={morningStory}
             onDismissMorningStory={handleDismissMorningStory}
             onOpenPatterns={() => setActiveTab('patterns')}
-            onOpenCalmTools={() => setActiveTab('calm-tools')}
+            onOpenCalmTools={() => setActiveTab('calm')}
+            onOpenCameraSetup={handleOpenCameraSetup}
+            onOpenVoiceSettings={handleOpenVoiceSettings}
             onUpdateSettings={updateSettings}
-            onSelectCamera={handleSelectCamera}
+            onToggleMeetingMode={session.toggleMeetingMode}
             onSetPostureManual={session.setPostureManual}
-            onCaptureNeutralPosture={session.captureNeutralPosture}
-            onCapturePostureReference={session.capturePostureReference}
+            onConfirmPosturePrompt={session.confirmPosturePrompt}
+            onCalibrateVoice={handleCalibrateVoice}
             onSnoozeCalming={session.snoozeCalmingSuggestion}
             onCompleteCalmingReset={handleCompleteCalmingReset}
             onStart={() => {
@@ -916,12 +943,6 @@ export function App() {
               void session.startSession();
             }}
             onStop={session.stopSession}
-            onTestStage1={session.triggerTestCue}
-            onTestStage2={() => {
-              unlockAudio();
-              setPauseSheetState({ open: true, isPreview: true });
-            }}
-            onOpenSettings={() => setActiveTab('settings')}
             pipSupported={pip.isSupported}
             autoPipSupported={pip.autoPipSupported}
             autoPipPermission={pip.autoPipPermission}
@@ -943,11 +964,7 @@ export function App() {
             onWelcomeRedirect={handleWelcomeRedirect}
             onWelcomeGrace={handleWelcomeGrace}
             onWelcomeDismiss={session.dismissWelcomeBack}
-            calibrationOpen={calibrationOpen}
-            onToggleCalibration={() => setCalibrationOpen((o) => !o)}
-            videoRef={session.videoRef}
             frameGeometry={session.frameGeometry}
-            dwellSec={session.dwellSec}
             diagnostics={session.diagnostics}
           />
         )}
@@ -959,17 +976,15 @@ export function App() {
             events={events}
             notes={notes}
             restlessnessThreshold={settings.restlessnessThreshold}
-            legacyStill={legacyStill}
-            onMigrateFromStill={handleMigrateFromStill}
-            onExportData={handleExportData}
-            onImportFile={handleImportFile}
+            onAddNote={handleAddNote}
+            onDeleteNote={handleDeleteNote}
             onCopiedDigest={() =>
               session.showWhisper('Plain-English daily summary copied', undefined, 3200)
             }
           />
         )}
 
-        {activeTab === 'calm-tools' && (
+        {activeTab === 'calm' && (
           <WhatWorksView
             settings={settings}
             onUpdateSettings={updateSettings}
@@ -977,29 +992,33 @@ export function App() {
           />
         )}
 
-        {activeTab === 'notes' && (
-          <NotesView
-            notes={notes}
-            events={events}
-            onAddNote={handleAddNote}
-            onDeleteNote={handleDeleteNote}
-            onExportData={handleExportData}
-            onClearData={handleClearData}
-          />
-        )}
-
         {activeTab === 'settings' && (
           <SettingsView
+            activeSection={settingsSection}
+            onChangeSection={setSettingsSection}
             settings={settings}
+            calibration={calibration}
+            rhythm={session.rhythm}
             theme={theme}
             autoPipSupported={pip.autoPipSupported}
             autoPipPermission={pip.autoPipPermission}
             availableCameras={session.availableCameras}
             legacyStill={legacyStill}
+            sessionRunning={session.status === 'running'}
+            voiceCalibrating={session.voiceCalibrating}
+            videoRef={session.videoRef}
+            frameGeometry={session.frameGeometry}
+            dwellSec={session.dwellSec}
+            diagnostics={session.diagnostics}
             onMigrateFromStill={handleMigrateFromStill}
+            onExportData={handleExportData}
             onImportFile={handleImportFile}
+            onClearData={handleClearData}
             onUpdateSettings={updateSettings}
             onSelectCamera={handleSelectCamera}
+            onCaptureNeutralPosture={session.captureNeutralPosture}
+            onCapturePostureReference={session.capturePostureReference}
+            onCalibrateVoice={handleCalibrateVoice}
             onToggleTheme={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
             onTestStage1={session.triggerTestCue}
             onTestStage2={() => {

@@ -9,20 +9,17 @@ import {
 } from '../lib/storage';
 import type {
   CalmingTechniqueId,
-  CameraDeviceOption,
   DaySummary,
   EngineStatus,
   FrameGeometry,
   LiveRhythmState,
   PiPKind,
-  PostureCalibration,
   PostureState,
   Stage1AutoCatch,
   StillSettings,
   VisionDiagnostics,
   WelcomeBackPrompt,
 } from '../types';
-import { CalibrationDrawer } from './CalibrationDrawer';
 import { CyclicSighPacer } from './CyclicSighPacer';
 import { MorningSummaryCard } from './MorningSummaryCard';
 import { TypewriterHeadline } from './TypewriterHeadline';
@@ -34,25 +31,24 @@ interface TodayViewProps {
   today: DaySummary;
   totalCalmSeconds: number;
   settings: StillSettings;
-  calibration: PostureCalibration;
   rhythm: LiveRhythmState;
-  availableCameras: CameraDeviceOption[];
+  inMeetingMode: boolean;
+  voiceCalibrating: boolean;
   morningStory: DailyStoryReport | null;
   onDismissMorningStory: () => void;
   onOpenPatterns: () => void;
   onOpenCalmTools: () => void;
+  onOpenCameraSetup: () => void;
+  onOpenVoiceSettings: () => void;
   onUpdateSettings: (patch: Partial<StillSettings>) => void;
-  onSelectCamera: (deviceId: string) => void;
+  onToggleMeetingMode: () => void;
   onSetPostureManual: (next: PostureState) => void;
-  onCaptureNeutralPosture: () => void;
-  onCapturePostureReference: (which: PostureState) => void;
+  onConfirmPosturePrompt: (accepted: boolean) => void;
+  onCalibrateVoice: () => void;
   onSnoozeCalming: () => void;
   onCompleteCalmingReset: (techniqueId: CalmingTechniqueId) => void;
   onStart: () => void;
   onStop: () => void;
-  onTestStage1: () => void;
-  onTestStage2: () => void;
-  onOpenSettings: () => void;
   pipSupported: boolean;
   autoPipSupported: boolean;
   autoPipPermission: 'granted' | 'prompt' | 'denied' | 'unknown';
@@ -71,11 +67,7 @@ interface TodayViewProps {
   onWelcomeRedirect: () => void;
   onWelcomeGrace: () => void;
   onWelcomeDismiss: () => void;
-  calibrationOpen: boolean;
-  onToggleCalibration: () => void;
-  videoRef: React.RefObject<HTMLVideoElement | null>;
   frameGeometry: FrameGeometry | null;
-  dwellSec: number;
   diagnostics: VisionDiagnostics;
 }
 
@@ -85,25 +77,24 @@ export function TodayView({
   today,
   totalCalmSeconds,
   settings,
-  calibration,
   rhythm,
-  availableCameras,
+  inMeetingMode,
+  voiceCalibrating,
   morningStory,
   onDismissMorningStory,
   onOpenPatterns,
   onOpenCalmTools,
+  onOpenCameraSetup,
+  onOpenVoiceSettings,
   onUpdateSettings,
-  onSelectCamera,
+  onToggleMeetingMode,
   onSetPostureManual,
-  onCaptureNeutralPosture,
-  onCapturePostureReference,
+  onConfirmPosturePrompt,
+  onCalibrateVoice,
   onSnoozeCalming,
   onCompleteCalmingReset,
   onStart,
   onStop,
-  onTestStage1,
-  onTestStage2,
-  onOpenSettings,
   pipSupported,
   autoPipSupported,
   autoPipPermission,
@@ -122,15 +113,11 @@ export function TodayView({
   onWelcomeRedirect,
   onWelcomeGrace,
   onWelcomeDismiss,
-  calibrationOpen,
-  onToggleCalibration,
-  videoRef,
   frameGeometry,
-  dwellSec,
   diagnostics,
 }: TodayViewProps) {
-  const [altTechniqueOffset, setAltTechniqueOffset] = useState(0);
   const [inlinePacerOpen, setInlinePacerOpen] = useState(false);
+  const [altTechniqueOffset, setAltTechniqueOffset] = useState(0);
 
   const isRunning = status === 'running';
   const isBusy =
@@ -141,9 +128,9 @@ export function TodayView({
   const name = settings.userName.trim();
 
   const headline = (() => {
-    if (status === 'requesting-camera') return 'Opening your camera locally.';
+    if (status === 'requesting-camera') return 'Opening your camera & mic locally.';
     if (status === 'loading-models') return 'Preparing on-device awareness.';
-    if (status === 'choosing-camera') return 'Finding the camera in front of your face.';
+    if (status === 'choosing-camera') return 'Finding the camera in front of you.';
     if (status === 'running') {
       if (frameGeometry?.handInZone) {
         return name
@@ -151,50 +138,68 @@ export function TodayView({
           : 'Noticing a hand in your watched zone.';
       }
       if (diagnostics.faceState === 'away') return 'Waiting quietly until you return.';
+      if (inMeetingMode) return 'In a meeting. Hands watched gently.';
+      if (rhythm.isSpeaking) return 'Speaking · restlessness paused.';
       if (rhythm.suggestCalming) {
         return name
-          ? `${name}, you seem a little restless — a brief breath can help.`
-          : 'Restlessness is building — a quiet reset can help.';
-      }
-      if (settings.workContext === 'desk' && rhythm.postureState === 'standing') {
-        return 'Standing steady. Hands at ease.';
+          ? `${name}, you seem a little restless.`
+          : 'Noticing a bit of restlessness.';
       }
       return 'You are here. Hands at ease.';
     }
     if (today.calmSeconds > 0) return 'Stillness builds quietly.';
-    return 'A quiet companion for your workday.';
+    return 'A quiet companion for your day.';
   })();
 
   const subline = (() => {
     if (status === 'requesting-camera') {
-      return 'Nothing is recorded or sent anywhere — video stays strictly in this browser tab.';
+      return '100% local in this browser tab — zero video or audio is ever recorded or sent.';
     }
     if (status === 'loading-models') {
-      return 'Loading bundled face, hand, and upper-body models from local storage.';
+      return 'Loading local face, hand, and posture models from cache.';
     }
     if (status === 'choosing-camera') {
-      return 'Checking your connected cameras to pick the clearest straight-on view of your face.';
+      return 'Checking connected cameras to pick the straight-on view.';
     }
     if (status === 'running') {
       if (pipActive) {
-        return 'Floating in a mini-window. Switch to other tabs or apps freely while Still Rhythm watches locally.';
+        return 'Floating in your mini-window. Work in other tabs or apps freely.';
       }
-      return diagnostics.faceState === 'cached'
-        ? 'Holding your watched zone steady while your hand passes across.'
-        : 'Watching gently on-device. Posture, neck comfort, and face touches log silently for tomorrow’s summary.';
+      const parts: string[] = [];
+      if (diagnostics.cameraLabel) parts.push(diagnostics.cameraLabel);
+      if (rhythm.dualCameraActive) parts.push('2-cam sit/stand');
+      if (rhythm.micState === 'active') parts.push('mic level live');
+      return parts.length > 0
+        ? `Watching locally · ${parts.join(' · ')}`
+        : 'Watching gently on-device. Keep working as usual.';
     }
-    return '100% on-device awareness — eyebrow cues, restlessness resets, sitting & standing rhythm, and next-day patterns.';
+    return 'One click starts all local awareness — eyebrows, voice comfort, restlessness, and desk rhythm.';
   })();
 
-  const activeCueSummary = [
-    settings.stage1Enabled ? `Stage 1 (${settings.stage1DwellSec.toFixed(1)}s)` : null,
-    settings.stage2Enabled ? `Stage 2 (${settings.stage2DwellSec.toFixed(1)}s)` : null,
-    settings.soundEnabled ? 'Chime on' : 'Visual only',
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  // Sit vs. Stand stretch progress
+  const boutMins = Math.floor(rhythm.boutSeconds / 60);
+  const targetMins =
+    rhythm.postureState === 'sitting' ? settings.sitWindowMinutes : settings.standWindowMinutes;
+  const boutPct = Math.min(100, Math.round((boutMins / Math.max(5, targetMins)) * 100));
+  const readyToSwitch = isRunning && boutMins >= Math.max(5, targetMins - 3);
 
-  // Pick context-matched calming technique (or alternate if user taps "Another idea")
+  const totalDeskSec = today.sittingSeconds + today.standingSeconds;
+  const standPct = totalDeskSec > 0 ? Math.round((today.standingSeconds / totalDeskSec) * 100) : 0;
+  const sitPct = totalDeskSec > 0 ? 100 - standPct : 100;
+
+  // Voice dB meter positioning (scale 32..86 dB)
+  const DB_MIN = 32;
+  const DB_MAX = 86;
+  const toDbPct = (db: number) =>
+    Math.max(0, Math.min(100, ((db - DB_MIN) / (DB_MAX - DB_MIN)) * 100));
+  const liveDbPct = rhythm.micState === 'active' ? toDbPct(rhythm.voiceDb) : 0;
+  const comfortStartPct = toDbPct(settings.voiceComfortMinDb);
+  const comfortWidthPct = Math.max(
+    8,
+    toDbPct(settings.voiceComfortMaxDb) - comfortStartPct
+  );
+
+  // Calming recommendation matching
   const baseIdx = Math.max(
     0,
     CALMING_TECHNIQUES.findIndex((t) => t.id === rhythm.recommendedTechniqueId)
@@ -202,31 +207,24 @@ export function TodayView({
   const shownTechnique =
     CALMING_TECHNIQUES[(baseIdx + altTechniqueOffset) % CALMING_TECHNIQUES.length];
 
-  // Sitting vs Standing ambient rhythm calculations (zero notifications)
-  const boutMins = Math.floor(rhythm.boutSeconds / 60);
-  const targetMins =
-    rhythm.postureState === 'sitting' ? settings.sitWindowMinutes : settings.standWindowMinutes;
-  const boutPct = Math.min(100, Math.round((boutMins / Math.max(5, targetMins)) * 100));
-  const readyToSwitch = boutMins >= Math.max(5, targetMins - 3);
-
-  const totalDeskSec = today.sittingSeconds + today.standingSeconds;
-  const standPct =
-    totalDeskSec >= 60 ? Math.round((today.standingSeconds / totalDeskSec) * 100) : 0;
-  const sitPct = totalDeskSec >= 60 ? 100 - standPct : 0;
-
   const touchesToday = totalFaceTouches(today.faceTouches);
   const adjustmentsToday = totalReliefMoves(today);
 
-  const restlessnessWord =
-    rhythm.restlessnessLevel === 'restless'
-      ? 'Restless'
-      : rhythm.restlessnessLevel === 'stirring'
-        ? 'Stirring'
-        : 'Settled';
+  const restlessnessLabel = !isRunning
+    ? 'Paused'
+    : inMeetingMode
+      ? 'Meeting · paused'
+      : rhythm.isSpeaking
+        ? 'Speaking · paused'
+        : rhythm.restlessnessLevel === 'restless'
+          ? `Restless (${rhythm.restlessnessScore})`
+          : rhythm.restlessnessLevel === 'stirring'
+            ? `Stirring (${rhythm.restlessnessScore})`
+            : `Settled (${rhythm.restlessnessScore})`;
 
   return (
     <div className="view-stack">
-      {/* Yesterday's Plain-English Summary (appears starting the next day) */}
+      {/* Contextual: Morning Summary Card (only shows starting the next day until dismissed) */}
       {morningStory && (
         <MorningSummaryCard
           story={morningStory}
@@ -236,7 +234,7 @@ export function TodayView({
         />
       )}
 
-      {/* Welcome Back check-in after 5-min walk or stepping away */}
+      {/* Contextual: Welcome Back Check-In */}
       {welcomeBack && (
         <WelcomeBackCard
           prompt={welcomeBack}
@@ -248,7 +246,7 @@ export function TodayView({
         />
       )}
 
-      {/* Adaptive False-Alarm Learning Nudge */}
+      {/* Contextual: Adaptive False-Alarm Nudge */}
       {recentFalseAlarms >= 2 && (
         <section className="nudge-card" aria-label="Adaptive sensitivity tuning">
           <div className="welcome-header">
@@ -262,8 +260,8 @@ export function TodayView({
             </button>
           </div>
           <p className="nudge-copy">
-            You dismissed {recentFalseAlarms} false alarms recently (like adjusting glasses or a
-            quick scratch). Want to soften sensitivity by one small step?
+            You dismissed {recentFalseAlarms} false alarms recently. Want to soften sensitivity by
+            one small step?
           </p>
           <div className="welcome-actions">
             <button
@@ -296,7 +294,9 @@ export function TodayView({
         </section>
       )}
 
-      {/* Hero Stillness Section */}
+      {/* =====================================================================
+          LAYER 1: Quiet Hero (generous whitespace, just 2 primary buttons)
+          ===================================================================== */}
       <section className="hero-section" aria-label="Session status">
         <TypewriterHeadline text={headline} />
         <p className="hero-subline">{subline}</p>
@@ -311,7 +311,7 @@ export function TodayView({
               onClick={onStart}
             >
               {status === 'requesting-camera'
-                ? 'Requesting camera…'
+                ? 'Starting sensors…'
                 : status === 'loading-models'
                   ? 'Loading local models…'
                   : status === 'choosing-camera'
@@ -334,24 +334,15 @@ export function TodayView({
               type="button"
               id="btn-toggle-pip"
               className={`btn btn-lg ${pipActive ? 'btn-subtle' : 'btn-ghost'}`}
-              title="Picture-in-Picture: floats a tiny Still Rhythm card in the corner while you use other tabs or apps"
+              title="Floats a tiny Still Rhythm card in the corner over other tabs and Mac apps"
               onClick={onTogglePiP}
             >
               {pipActive ? 'Close mini-window' : 'Float mini-window'}
             </button>
           )}
-
-          <button
-            type="button"
-            id="btn-test-cue"
-            className="btn btn-ghost btn-lg"
-            onClick={onTestStage1}
-          >
-            Test cue
-          </button>
         </div>
 
-        {/* Desk vs. On the go context pill row (handles Logitech desk vs laptop in meetings/bed cleanly) */}
+        {/* Slim Context Row: Desk / Away + Meeting / Auto-Speaking */}
         <div className="context-pill-row">
           <div className="segmented" role="group" aria-label="Where you are working">
             <button
@@ -359,41 +350,52 @@ export function TodayView({
               className={`segmented-btn ${settings.workContext === 'desk' ? 'segmented-btn--active' : ''}`}
               onClick={() => onUpdateSettings({ workContext: 'desk' })}
             >
-              At my desk
+              At desk
             </button>
             <button
               type="button"
               className={`segmented-btn ${settings.workContext === 'portable' ? 'segmented-btn--active' : ''}`}
               onClick={() => onUpdateSettings({ workContext: 'portable' })}
             >
-              Meeting / Bed
+              Away / Bed
             </button>
           </div>
-          <span className="context-hint">
-            {settings.workContext === 'desk'
-              ? diagnostics.cameraLabel
-                ? `Using ${diagnostics.cameraLabel}`
-                : 'Sitting & standing guidance active'
-              : 'Sitting & standing paused while away from your desk'}
-          </span>
+
+          <button
+            type="button"
+            id="btn-meeting-toggle"
+            className={`meeting-pill ${
+              inMeetingMode
+                ? 'meeting-pill--active'
+                : isRunning && rhythm.isSpeaking
+                  ? 'meeting-pill--speaking'
+                  : ''
+            }`}
+            aria-pressed={inMeetingMode}
+            title="Pauses restlessness during listen-only meetings (talking is also detected automatically)"
+            onClick={onToggleMeetingMode}
+          >
+            <span className="meeting-pill-dot" aria-hidden="true" />
+            {inMeetingMode
+              ? 'In a meeting'
+              : isRunning && rhythm.isSpeaking
+                ? 'Speaking · auto'
+                : 'Meeting'}
+          </button>
         </div>
 
-        {pipSupported && (
+        {/* Only show Auto-PiP tip when Chrome has explicitly blocked it */}
+        {pipSupported && autoPipPermission === 'denied' && (
           <p className="pip-helper-line">
-            {autoPipPermission === 'denied' ? (
-              <>
-                <strong>Auto-float is blocked in browser settings</strong> — click the site controls
-                icon left of the address bar to allow Automatic picture-in-picture, or click{' '}
-                <strong>Float mini-window</strong> above.
-              </>
-            ) : (
-              <>
-                <strong>Mini-window</strong> pops out automatically when you switch browser tabs
-                {autoPipSupported && settings.autoPipOnTabSwitch
-                  ? ' — click Float mini-window once to keep it floating over other Mac apps too.'
-                  : '. Click Float mini-window to keep it floating over other apps.'}
-              </>
-            )}
+            <strong>Auto-float is blocked in Chrome</strong> — click the site icon left of the
+            address bar to allow Automatic picture-in-picture, or use{' '}
+            <strong>Float mini-window</strong> above.
+          </p>
+        )}
+        {pipSupported && autoPipSupported && autoPipPermission !== 'denied' && isRunning && !pipActive && (
+          <p className="pip-helper-line">
+            Pops out automatically on tab switch · click <strong>Float mini-window</strong> once to
+            float over other Mac apps.
           </p>
         )}
 
@@ -424,7 +426,7 @@ export function TodayView({
         )}
       </section>
 
-      {/* Threshold-Triggered Gentle Calming Suggestion (ONLY appears when restlessness crosses threshold) */}
+      {/* Contextual: Threshold-Triggered Calming Suggestion */}
       {isRunning && rhythm.suggestCalming && (
         <section className="calming-suggestion-card" aria-label="Calming suggestion">
           <div className="welcome-header">
@@ -495,211 +497,284 @@ export function TodayView({
         </section>
       )}
 
-      {/* Ambient Sitting & Standing Rhythm (Desk mode only · Zero notifications) */}
-      {settings.workContext === 'desk' && settings.sitStandGuidanceEnabled && (
-        <section className="rhythm-card" aria-label="Sitting and standing rhythm">
-          <div className="rhythm-card-head">
-            <div>
-              <div className="rhythm-label-row">
-                <span className="section-label">Sitting &amp; standing rhythm</span>
-                <span className="rhythm-quiet-tag">Quiet guide · No alerts</span>
-              </div>
-              <p className="rhythm-guidance-line">
-                {!isRunning ? (
-                  'Begin a session to quietly track your sitting and standing balance.'
-                ) : rhythm.postureState === 'sitting' ? (
-                  readyToSwitch ? (
+      {/* =====================================================================
+          LAYER 2: One Unified "Live Rhythm" Card
+          (Desk Position + Voice Comfort dB + Quiet Background Signals)
+          ===================================================================== */}
+      <section className="unified-rhythm-card" aria-label="Live daily rhythm">
+        {/* Band 1: Desk Sitting vs. Standing (Desk mode only) */}
+        {settings.workContext === 'desk' && settings.sitStandGuidanceEnabled && (
+          <div className="rhythm-band">
+            <div className="rhythm-band-head">
+              <div className="rhythm-band-title-col">
+                <div className="rhythm-label-row">
+                  <span className="section-label">Desk rhythm</span>
+                  {rhythm.dualCameraActive && (
+                    <span className="rhythm-quiet-tag">2 cameras</span>
+                  )}
+                </div>
+                <p className="rhythm-band-sub">
+                  {!isRunning ? (
+                    'Quiet sit & stand balance — no notifications.'
+                  ) : rhythm.postureState === 'sitting' ? (
+                    readyToSwitch ? (
+                      <>
+                        Sitting <strong className="tabular">{boutMins}m</strong> — good moment to
+                        stand at a natural pause.
+                      </>
+                    ) : (
+                      <>
+                        Sitting <strong className="tabular">{boutMins}m</strong> of {targetMins}m
+                        gentle window.
+                      </>
+                    )
+                  ) : readyToSwitch ? (
                     <>
-                      Sitting for <strong className="tabular">{boutMins}m</strong> — good moment
-                      to stand up whenever you hit a natural pause.
+                      Standing <strong className="tabular">{boutMins}m</strong> — nice stretch; sit
+                      whenever you&rsquo;re ready.
                     </>
                   ) : (
                     <>
-                      Sitting for <strong className="tabular">{boutMins}m</strong> — settled
-                      comfortably.
+                      Standing <strong className="tabular">{boutMins}m</strong> of {targetMins}m
+                      gentle window.
                     </>
-                  )
-                ) : readyToSwitch ? (
-                  <>
-                    Standing for <strong className="tabular">{boutMins}m</strong> — nice standing
-                    stretch; sit back down whenever you&rsquo;re ready.
-                  </>
-                ) : (
-                  <>
-                    Standing for <strong className="tabular">{boutMins}m</strong> — taking steady
-                    pressure off your back and neck.
-                  </>
-                )}
-              </p>
-            </div>
-
-            <div className="segmented" role="group" aria-label="Current desk position">
-              <button
-                type="button"
-                id="btn-posture-sitting"
-                className={`segmented-btn ${rhythm.postureState === 'sitting' ? 'segmented-btn--active' : ''}`}
-                onClick={() => onSetPostureManual('sitting')}
-              >
-                Sitting
-              </button>
-              <button
-                type="button"
-                id="btn-posture-standing"
-                className={`segmented-btn ${rhythm.postureState === 'standing' ? 'segmented-btn--active' : ''}`}
-                onClick={() => onSetPostureManual('standing')}
-              >
-                Standing
-              </button>
-            </div>
-          </div>
-
-          {isRunning && (
-            <div className="rhythm-bout-wrap">
-              <div className="rhythm-bout-meta tabular">
-                <span>
-                  {rhythm.postureState === 'sitting' ? 'Current sitting stretch' : 'Current standing stretch'}
-                </span>
-                <span>
-                  {boutMins}m / {targetMins}m gentle window
-                </span>
+                  )}
+                </p>
               </div>
+
+              <div className="segmented" role="group" aria-label="Current desk position">
+                <button
+                  type="button"
+                  id="btn-posture-sitting"
+                  className={`segmented-btn ${rhythm.postureState === 'sitting' ? 'segmented-btn--active' : ''}`}
+                  onClick={() => onSetPostureManual('sitting')}
+                >
+                  Sitting
+                </button>
+                <button
+                  type="button"
+                  id="btn-posture-standing"
+                  className={`segmented-btn ${rhythm.postureState === 'standing' ? 'segmented-btn--active' : ''}`}
+                  onClick={() => onSetPostureManual('standing')}
+                >
+                  Standing
+                </button>
+              </div>
+            </div>
+
+            {/* Rare, gentle dual-camera posture change confirmation bar */}
+            {isRunning && rhythm.pendingPosturePrompt && (
+              <div className="posture-confirm-bar" role="status" aria-live="polite">
+                <span className="posture-confirm-text">
+                  Looks like you{' '}
+                  <strong>
+                    {rhythm.pendingPosturePrompt.candidate === 'standing'
+                      ? 'stood up'
+                      : 'sat down'}
+                  </strong>{' '}
+                  — switch to{' '}
+                  {rhythm.pendingPosturePrompt.candidate === 'standing' ? 'Standing' : 'Sitting'}?
+                </span>
+                <div className="posture-confirm-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-xs"
+                    onClick={() => onConfirmPosturePrompt(true)}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => onConfirmPosturePrompt(false)}
+                  >
+                    Still {rhythm.postureState}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {isRunning && (
               <div className="rhythm-bar-track">
                 <div
                   className={`rhythm-bar-fill ${readyToSwitch ? 'rhythm-bar-fill--warm' : ''}`}
                   style={{ width: `${Math.max(3, boutPct)}%` }}
                 />
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Daily Sitting vs Standing Balance */}
-          <div className="rhythm-daily-split">
             <div className="rhythm-split-meta tabular">
               <span>
-                Today at desk:{' '}
-                <strong>
-                  {totalDeskSec > 0 ? formatShortDuration(totalDeskSec) : '0m'}
-                </strong>
-              </span>
-              <span>
-                Standing <strong>{formatShortDuration(today.standingSeconds)}</strong>
-                {totalDeskSec >= 60 ? ` (${standPct}%)` : ''} · Sitting{' '}
+                Stand <strong>{formatShortDuration(today.standingSeconds)}</strong>
+                {totalDeskSec >= 60 ? ` (${standPct}%)` : ''} · Sit{' '}
                 <strong>{formatShortDuration(today.sittingSeconds)}</strong>
-                {today.postureSwitches > 0 ? ` · ${today.postureSwitches} switches` : ''}
               </span>
-            </div>
-            <div className="split-bar-track" aria-hidden="true">
-              <div className="split-bar-stand" style={{ width: `${standPct}%` }} />
-              <div className="split-bar-sit" style={{ width: `${sitPct}%` }} />
+              <div className="split-bar-track split-bar-track--inline" aria-hidden="true">
+                <div className="split-bar-stand" style={{ width: `${standPct}%` }} />
+                <div className="split-bar-sit" style={{ width: `${sitPct}%` }} />
+              </div>
             </div>
           </div>
-        </section>
-      )}
+        )}
 
-      {/* Editorial Stat Trio (Classic Still) */}
+        {/* Band 2: Live Voice Volume (dB) Comfort Meter */}
+        <div className="rhythm-band">
+          <div className="rhythm-band-head">
+            <div className="rhythm-band-title-col">
+              <div className="rhythm-label-row">
+                <span className="section-label">Voice level</span>
+                <span
+                  className={`voice-status-tag ${
+                    rhythm.voiceStatus === 'loud'
+                      ? 'voice-status-tag--loud'
+                      : rhythm.voiceStatus === 'comfortable'
+                        ? 'voice-status-tag--ok'
+                        : ''
+                  }`}
+                >
+                  {!isRunning
+                    ? settings.micEnabled
+                      ? 'Starts with session'
+                      : 'Mic off'
+                    : rhythm.micState === 'denied'
+                      ? 'Mic blocked'
+                      : rhythm.micState !== 'active'
+                        ? 'Mic off'
+                        : rhythm.voiceStatus === 'loud'
+                          ? `${rhythm.voiceDb} dB · A bit loud`
+                          : rhythm.voiceStatus === 'comfortable'
+                            ? `${rhythm.voiceDb} dB · Comfortable`
+                            : `${rhythm.voiceDb} dB · Quiet`}
+                </span>
+              </div>
+            </div>
+
+            <div className="voice-head-actions">
+              {isRunning && rhythm.micState === 'active' ? (
+                <button
+                  type="button"
+                  className="text-link-btn"
+                  disabled={voiceCalibrating}
+                  onClick={onCalibrateVoice}
+                >
+                  {voiceCalibrating ? 'Listening (3s)…' : 'Set my voice'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="text-link-btn"
+                  onClick={onOpenVoiceSettings}
+                >
+                  Voice settings
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div
+            className={`voice-meter-track ${
+              rhythm.voiceStatus === 'loud' ? 'voice-meter-track--loud' : ''
+            }`}
+            aria-label={`Voice level ${rhythm.voiceDb} decibels`}
+          >
+            {/* Shaded sage-green comfortable range */}
+            <div
+              className="voice-comfort-band"
+              style={{ left: `${comfortStartPct}%`, width: `${comfortWidthPct}%` }}
+              title={`Comfortable zone: ${settings.voiceComfortMinDb}–${settings.voiceComfortMaxDb} dB`}
+            />
+            {/* Live loudness fill */}
+            <div
+              className={`voice-meter-fill ${
+                rhythm.voiceStatus === 'loud'
+                  ? 'voice-meter-fill--loud'
+                  : rhythm.voiceStatus === 'comfortable'
+                    ? 'voice-meter-fill--ok'
+                    : ''
+              }`}
+              style={{ width: `${liveDbPct}%` }}
+            />
+          </div>
+          <div className="voice-scale-row tabular">
+            <span>Quiet</span>
+            <span>
+              Comfort zone ({settings.voiceComfortMinDb}–{settings.voiceComfortMaxDb} dB)
+            </span>
+            <span>Loud</span>
+          </div>
+        </div>
+
+        {/* Band 3: Quiet Background Signals (one clean 3-column row, zero alerts) */}
+        <div className="rhythm-band rhythm-band--quiet">
+          <div className="silent-strip-grid">
+            <div className="silent-cell">
+              <span className="silent-cell-label">Restlessness</span>
+              <span className="silent-cell-val tabular">{restlessnessLabel}</span>
+            </div>
+            <div className="silent-cell">
+              <span className="silent-cell-label">Neck &amp; shoulder shifts</span>
+              <span className="silent-cell-val tabular">
+                {adjustmentsToday}{' '}
+                <span className="silent-cell-sub">
+                  {today.forwardLeanSeconds >= 60
+                    ? `· ${formatShortDuration(today.forwardLeanSeconds)} lean`
+                    : 'today'}
+                </span>
+              </span>
+            </div>
+            <div className="silent-cell">
+              <span className="silent-cell-label">Face touches</span>
+              <span className="silent-cell-val tabular">
+                {touchesToday}{' '}
+                <span className="silent-cell-sub">
+                  {touchesToday > 0 ? `· ${today.faceTouches.chin} chin` : 'today'}
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          LAYER 3: Classic Still Strip + Single Subtle Setup Link
+          ===================================================================== */}
       <section className="metrics-strip" aria-label="Today's stillness summary">
         <div className="metric-item">
-          <span className="metric-label">Cumulative calm time</span>
+          <span className="metric-label">Calm today</span>
           <span className="metric-value tabular">{formatDuration(today.calmSeconds)}</span>
           <span className="metric-footnote">
             {totalCalmSeconds > today.calmSeconds
-              ? `${formatDuration(totalCalmSeconds)} all-time · never resets`
-              : 'Accumulates gently · never resets'}
+              ? `${formatDuration(totalCalmSeconds)} all-time`
+              : 'Accumulates gently'}
           </span>
         </div>
 
         <div className="metric-item">
           <span className="metric-label">Urges redirected</span>
           <span className="metric-value tabular">{today.urgesRedirected}</span>
-          <span className="metric-footnote">Stage 1 &amp; 2 catches today</span>
+          <span className="metric-footnote">Eyebrow catches today</span>
         </div>
 
         <div className="metric-item">
           <span className="metric-label">Grace recoveries</span>
           <span className="metric-value tabular">{today.graceRecoveries}</span>
-          <span className="metric-footnote">Noticed &amp; reset without shame</span>
+          <span className="metric-footnote">Reset without shame</span>
         </div>
       </section>
 
-      {/* Quiet Silent-Tracking Strip (No alerts — purely collated for daily pattern summaries) */}
-      <section className="silent-strip" aria-label="Quiet background signals">
-        <div className="silent-strip-head">
-          <span className="silent-strip-title">Logged quietly in the background</span>
-          <span className="silent-strip-note">No alerts · Builds tomorrow&rsquo;s summary</span>
-        </div>
-        <div className="silent-strip-grid">
-          <div className="silent-cell">
-            <span className="silent-cell-label">Restlessness</span>
-            <span className="silent-cell-val tabular">
-              {isRunning ? `${restlessnessWord} (${rhythm.restlessnessScore})` : 'Paused'}
-            </span>
-          </div>
-          <div className="silent-cell">
-            <span className="silent-cell-label">Neck &amp; shoulder shifts</span>
-            <span className="silent-cell-val tabular">
-              {adjustmentsToday}{' '}
-              <span className="silent-cell-sub">
-                {today.forwardLeanSeconds >= 60
-                  ? `· ${formatShortDuration(today.forwardLeanSeconds)} leaning`
-                  : 'today'}
-              </span>
-            </span>
-          </div>
-          <div className="silent-cell">
-            <span className="silent-cell-label">Face touches</span>
-            <span className="silent-cell-val tabular">
-              {touchesToday}{' '}
-              <span className="silent-cell-sub">
-                {touchesToday > 0 ? `· ${today.faceTouches.chin} chin` : 'today'}
-              </span>
-            </span>
-          </div>
-        </div>
-      </section>
-
-      {/* Quiet 1-line summary bar linking to Settings */}
-      <div className="cue-summary-bar">
-        <span className="cue-summary-text">{activeCueSummary || 'All gentle cues paused'}</span>
-        <div className="settings-inline-actions">
-          <button
-            type="button"
-            id="btn-today-preview-pause"
-            className="text-link-btn"
-            onClick={onTestStage2}
-          >
-            Preview pause
-          </button>
-          <span className="meta-dot" aria-hidden="true">
-            ·
-          </span>
-          <button
-            type="button"
-            id="btn-open-cue-settings"
-            className="text-link-btn"
-            onClick={onOpenSettings}
-          >
-            Settings →
-          </button>
-        </div>
+      <div className="today-quiet-foot">
+        <span className="today-quiet-note">
+          100% on-device · Zero video or audio saved
+        </span>
+        <button
+          type="button"
+          id="btn-open-camera-setup"
+          className="text-link-btn"
+          onClick={onOpenCameraSetup}
+        >
+          Camera &amp; zone preview →
+        </button>
       </div>
-
-      {/* Expandable Camera, Calibration & Silhouette Preview */}
-      <CalibrationDrawer
-        expanded={calibrationOpen}
-        onToggleExpand={onToggleCalibration}
-        settings={settings}
-        calibration={calibration}
-        availableCameras={availableCameras}
-        onUpdateSettings={onUpdateSettings}
-        onSelectCamera={onSelectCamera}
-        onCaptureNeutralPosture={onCaptureNeutralPosture}
-        onCapturePostureReference={onCapturePostureReference}
-        videoRef={videoRef}
-        frameGeometry={frameGeometry}
-        dwellSec={dwellSec}
-        sessionRunning={isRunning}
-        diagnostics={diagnostics}
-      />
     </div>
   );
 }

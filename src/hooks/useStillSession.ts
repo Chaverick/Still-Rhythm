@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { playSingingBowl, unlockAudio } from '../lib/audio';
+import { DualCameraMonitor } from '../lib/dualCameraPosture';
 import { RhythmSignalProcessor } from '../lib/rhythmSignals';
 import { checkModelsCached, LocalVisionEngine } from '../lib/vision';
+import { LocalVoiceMonitor } from '../lib/voiceMonitor';
 import { WakeLockController } from '../lib/wakeLock';
 import type {
   CameraDeviceOption,
@@ -70,9 +72,18 @@ export function useStillSession({
   pipWindow,
 }: UseStillSessionOptions) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const secondaryVideoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const engineRef = useRef<LocalVisionEngine | null>(null);
   const wakeLockRef = useRef<WakeLockController | null>(null);
+  const voiceMonitorRef = useRef<LocalVoiceMonitor | null>(null);
+  if (!voiceMonitorRef.current) {
+    voiceMonitorRef.current = new LocalVoiceMonitor();
+  }
+  const dualCamRef = useRef<DualCameraMonitor | null>(null);
+  if (!dualCamRef.current) {
+    dualCamRef.current = new DualCameraMonitor();
+  }
   const processorRef = useRef<RhythmSignalProcessor | null>(null);
   if (!processorRef.current) {
     processorRef.current = new RhythmSignalProcessor(calibration);
@@ -82,6 +93,8 @@ export function useStillSession({
   settingsRef.current = settings;
   const calibrationRef = useRef(calibration);
   calibrationRef.current = calibration;
+  const onUpdateCalibrationRef = useRef(onUpdateCalibration);
+  onUpdateCalibrationRef.current = onUpdateCalibration;
   const pauseSheetOpenRef = useRef(pauseSheetOpen);
   pauseSheetOpenRef.current = pauseSheetOpen;
   const pipActiveRef = useRef(pipActive);
@@ -114,6 +127,10 @@ export function useStillSession({
   const [whisper, setWhisper] = useState<WhisperToast | null>(null);
   const [frameGeometry, setFrameGeometry] = useState<FrameGeometry | null>(null);
   const [availableCameras, setAvailableCameras] = useState<CameraDeviceOption[]>([]);
+  const [inMeetingMode, setInMeetingMode] = useState(false);
+  const inMeetingModeRef = useRef(inMeetingMode);
+  inMeetingModeRef.current = inMeetingMode;
+  const [voiceCalibrating, setVoiceCalibrating] = useState(false);
   const [rhythm, setRhythm] = useState<LiveRhythmState>(() =>
     processorRef.current!.getState(settings)
   );
@@ -274,11 +291,15 @@ export function useStillSession({
       rafRef.current = null;
     }
     stopCameraTracks();
+    voiceMonitorRef.current?.stop();
+    dualCamRef.current?.stop();
     engineRef.current?.resetCache();
     void wakeLockRef.current?.disable();
     resetDwellState();
     setFrameGeometry(null);
     lastFrameRef.current = null;
+    setInMeetingMode(false);
+    setVoiceCalibrating(false);
     setStatus('idle');
     setErrorMessage(null);
     setDiagnostics((d) => ({
@@ -406,19 +427,54 @@ export function useStillSession({
       handsCount,
     }));
 
-    // Step Still Rhythm signal processor (restlessness, sit/stand, neck comfort, silent face touches)
+    // Step Still Rhythm signal processor (audio-visual talking, voice dB, dual-camera sit/stand, neck comfort, silent face touches)
     if (processorRef.current) {
+      const voiceSample = voiceMonitorRef.current
+        ? voiceMonitorRef.current.sample(
+            now,
+            s.voiceComfortMinDb,
+            s.voiceComfortMaxDb,
+            s.voiceCalOffsetDb
+          )
+        : {
+            micState: 'off' as const,
+            rawDb: 0,
+            smoothedDb: 0,
+            voiceBandActive: false,
+            status: 'off' as const,
+          };
+
+      const secondaryCam =
+        s.workContext === 'desk' && s.dualCameraSitStand && dualCamRef.current
+          ? dualCamRef.current.sample(now)
+          : null;
+
       const nextRhythm = processorRef.current.step(
         frame,
         dt,
         s,
         calibrationRef.current,
         {
+          voice: voiceSample,
+          secondaryCam,
+          dualCameraActive: Boolean(dualCamRef.current?.isActive),
+          secondaryCameraLabel: dualCamRef.current?.label || '',
+          inMeetingMode: inMeetingModeRef.current,
+        },
+        {
           onFaceTouch: (region) => onFaceTouchRef.current(region),
           onReliefMove: (kind) => onReliefMoveRef.current(kind),
           onPostureAutoSwitched: (next) => {
             onPostureSwitchedRef.current(next, 'auto');
+            showWhisper(
+              next === 'standing'
+                ? 'Switched to Standing automatically'
+                : 'Switched to Sitting automatically',
+              undefined,
+              3200
+            );
           },
+          onLearnPostureCalibration: (patch) => onUpdateCalibrationRef.current(patch),
         },
         now,
         wallNow
@@ -849,6 +905,44 @@ export function useStillSession({
       setStatus('running');
       rafRef.current = requestAnimationFrame(runLoop);
 
+      // Start local microphone loudness & speech-band monitor if enabled (never blocks session if declined!)
+      if (settingsRef.current.micEnabled && voiceMonitorRef.current) {
+        void voiceMonitorRef.current.start();
+      }
+
+      // Start lightweight secondary physical camera (320x240 @ 2 FPS) at desk for dual-camera sit/stand
+      if (
+        settingsRef.current.workContext === 'desk' &&
+        settingsRef.current.dualCameraSitStand &&
+        secondaryVideoRef.current &&
+        dualCamRef.current &&
+        navigator.mediaDevices?.enumerateDevices
+      ) {
+        const primaryDeviceId = videoTrack?.getSettings?.().deviceId || '';
+        void navigator.mediaDevices
+          .enumerateDevices()
+          .then((devices) => {
+            if (!runningRef.current || !secondaryVideoRef.current || !dualCamRef.current) return;
+            const isVirtualOrDesk = (label: string) =>
+              /desk view|virtual|obs|snap camera|ndi|mmhmm|loom/i.test(label);
+            const otherCam = devices.find(
+              (d) =>
+                d.kind === 'videoinput' &&
+                d.deviceId &&
+                d.deviceId !== primaryDeviceId &&
+                !isVirtualOrDesk(d.label || '')
+            );
+            if (otherCam) {
+              void dualCamRef.current.start(
+                otherCam.deviceId,
+                otherCam.label || 'Second camera',
+                secondaryVideoRef.current
+              );
+            }
+          })
+          .catch(() => {});
+      }
+
       if (autoPickedNotice) {
         showWhisper(autoPickedNotice, undefined, 5000);
       }
@@ -865,6 +959,50 @@ export function useStillSession({
     },
     [refreshCameras, resetDwellState, runLoop, showWhisper, status, stepDetection, stopCameraTracks]
   );
+
+  // Dynamically react when user toggles micEnabled while a session is running
+  useEffect(() => {
+    if (status !== 'running') return;
+    if (settings.micEnabled) {
+      void voiceMonitorRef.current?.start();
+    } else {
+      voiceMonitorRef.current?.stop();
+    }
+  }, [status, settings.micEnabled]);
+
+  // Dynamically react when user toggles dualCameraSitStand or switches Desk vs Away while running
+  useEffect(() => {
+    if (status !== 'running') return;
+    if (settings.workContext !== 'desk' || !settings.dualCameraSitStand) {
+      dualCamRef.current?.stop();
+      return;
+    }
+    if (dualCamRef.current?.isActive || !secondaryVideoRef.current) return;
+    const primaryDeviceId = streamRef.current?.getVideoTracks()[0]?.getSettings?.().deviceId || '';
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    void navigator.mediaDevices
+      .enumerateDevices()
+      .then((devices) => {
+        if (!runningRef.current || !secondaryVideoRef.current || !dualCamRef.current) return;
+        const isVirtualOrDesk = (label: string) =>
+          /desk view|virtual|obs|snap camera|ndi|mmhmm|loom/i.test(label);
+        const otherCam = devices.find(
+          (d) =>
+            d.kind === 'videoinput' &&
+            d.deviceId &&
+            d.deviceId !== primaryDeviceId &&
+            !isVirtualOrDesk(d.label || '')
+        );
+        if (otherCam) {
+          void dualCamRef.current.start(
+            otherCam.deviceId,
+            otherCam.label || 'Second camera',
+            secondaryVideoRef.current
+          );
+        }
+      })
+      .catch(() => {});
+  }, [status, settings.workContext, settings.dualCameraSitStand]);
 
   // Switch cameras seamlessly (or pass '' to re-scan all cameras and pick the front-facing one)
   const switchCamera = useCallback(
@@ -888,11 +1026,12 @@ export function useStillSession({
       if (sinceFace <= AWAY_PAUSE_CALM_MS) {
         const cur = rhythmRef.current;
         const s = settingsRef.current;
+        const talkingOrMeeting = cur.isSpeaking || inMeetingModeRef.current;
         onRhythmSecondRef.current({
           postureState: cur.postureState,
           trackPosture: s.workContext === 'desk' && s.sitStandGuidanceEnabled,
           restlessnessScore: cur.restlessnessScore,
-          isRestless: cur.restlessnessScore >= s.restlessnessThreshold,
+          isRestless: !talkingOrMeeting && cur.restlessnessScore >= s.restlessnessThreshold,
           isForwardLean: cur.forwardLeanPct >= 14,
           shoulderGuardPct: cur.shoulderGuardPct,
         });
@@ -943,16 +1082,37 @@ export function useStillSession({
       if (testGlowTimerRef.current) window.clearTimeout(testGlowTimerRef.current);
       if (whisperTimerRef.current) window.clearTimeout(whisperTimerRef.current);
       stopCameraTracks();
+      voiceMonitorRef.current?.stop();
+      dualCamRef.current?.stop();
       engineRef.current?.dispose();
     };
   }, [stopCameraTracks]);
+
+  const toggleMeetingMode = useCallback(() => {
+    setInMeetingMode((prev) => {
+      const next = !prev;
+      showWhisper(
+        next
+          ? 'Meeting mode on · restlessness paused (eyebrow & posture still active)'
+          : 'Meeting mode off · full restlessness rhythm active',
+        undefined,
+        3600
+      );
+      return next;
+    });
+  }, [showWhisper]);
 
   // Manual controls for posture, calming resets, and 1-tap calibration
   const setPostureManual = useCallback(
     (next: PostureState) => {
       const prev = rhythmRef.current.postureState;
-      processorRef.current?.setPostureManual(next);
-      const updated = processorRef.current?.getState(settingsRef.current);
+      processorRef.current?.setPostureManual(next, onUpdateCalibrationRef.current);
+      const updated = processorRef.current?.getState(
+        settingsRef.current,
+        Date.now(),
+        performance.now(),
+        inMeetingModeRef.current
+      );
       if (updated) {
         rhythmRef.current = updated;
         setRhythm(updated);
@@ -961,8 +1121,8 @@ export function useStillSession({
         onPostureSwitchedRef.current(next, 'manual');
         showWhisper(
           next === 'standing'
-            ? 'Switched to Standing · enjoy the stretch'
-            : 'Switched to Sitting · settled back in',
+            ? 'Switched to Standing · learned this view'
+            : 'Switched to Sitting · learned this view',
           undefined,
           3200
         );
@@ -971,9 +1131,75 @@ export function useStillSession({
     [showWhisper]
   );
 
+  const confirmPosturePrompt = useCallback(
+    (accepted: boolean) => {
+      processorRef.current?.resolvePosturePrompt(
+        accepted,
+        calibrationRef.current,
+        onUpdateCalibrationRef.current,
+        (next) => {
+          onPostureSwitchedRef.current(next, 'auto');
+        }
+      );
+      const updated = processorRef.current?.getState(
+        settingsRef.current,
+        Date.now(),
+        performance.now(),
+        inMeetingModeRef.current
+      );
+      if (updated) {
+        rhythmRef.current = updated;
+        setRhythm(updated);
+      }
+      showWhisper(
+        accepted
+          ? 'Updated & learned your desk view for next time'
+          : 'Got it — staying put and backing off for 10 min',
+        undefined,
+        3400
+      );
+    },
+    [showWhisper]
+  );
+
+  const calibrateVoiceComfort = useCallback(
+    async (onSaveOffset: (offsetDb: number) => void) => {
+      const monitor = voiceMonitorRef.current;
+      if (!monitor) return;
+      if (monitor.micState !== 'active') {
+        const state = await monitor.start();
+        if (state !== 'active') {
+          showWhisper(
+            'Allow microphone access in Chrome to measure your live voice level (dB)',
+            undefined,
+            4500
+          );
+          return;
+        }
+      }
+      setVoiceCalibrating(true);
+      showWhisper('Speak naturally for 3 seconds to set your comfortable green zone…', undefined, 3400);
+      monitor.beginCalibration((offsetDb) => {
+        setVoiceCalibrating(false);
+        if (offsetDb !== null) {
+          onSaveOffset(offsetDb);
+          showWhisper('Comfortable voice level calibrated · green zone tuned to your mic', undefined, 4000);
+        } else {
+          showWhisper('Didn’t hear steady speech — try speaking a full sentence for 3 seconds', undefined, 4200);
+        }
+      });
+    },
+    [showWhisper]
+  );
+
   const snoozeCalmingSuggestion = useCallback(() => {
     processorRef.current?.snoozeSuggestion(15);
-    const updated = processorRef.current?.getState(settingsRef.current);
+    const updated = processorRef.current?.getState(
+      settingsRef.current,
+      Date.now(),
+      performance.now(),
+      inMeetingModeRef.current
+    );
     if (updated) {
       rhythmRef.current = updated;
       setRhythm(updated);
@@ -982,7 +1208,12 @@ export function useStillSession({
 
   const markCalmingCompleted = useCallback(() => {
     processorRef.current?.markCalmingCompleted();
-    const updated = processorRef.current?.getState(settingsRef.current);
+    const updated = processorRef.current?.getState(
+      settingsRef.current,
+      Date.now(),
+      performance.now(),
+      inMeetingModeRef.current
+    );
     if (updated) {
       rhythmRef.current = updated;
       setRhythm(updated);
@@ -1013,10 +1244,12 @@ export function useStillSession({
         showWhisper('Start your session first so we can capture this position', undefined, 4000);
         return;
       }
+      const sec = dualCamRef.current?.sample(performance.now()) ?? null;
       if (which === 'sitting') {
         onUpdateCalibration({
           sitFaceY: f.upperBody.headCenter.y,
           sitBgHash: f.upperBody.bgHash,
+          ...(sec ? { sitSecondaryHash: sec.edgeHash, sitSecondaryMassY: sec.upperMassY } : {}),
           updatedAt: Date.now(),
         });
         processorRef.current?.setPostureManual('sitting');
@@ -1025,12 +1258,18 @@ export function useStillSession({
         onUpdateCalibration({
           standFaceY: f.upperBody.headCenter.y,
           standBgHash: f.upperBody.bgHash,
+          ...(sec ? { standSecondaryHash: sec.edgeHash, standSecondaryMassY: sec.upperMassY } : {}),
           updatedAt: Date.now(),
         });
         processorRef.current?.setPostureManual('standing');
-        showWhisper('Standing position saved · auto sit/stand detection is ready', undefined, 4500);
+        showWhisper('Standing position saved · dual-camera detection is ready', undefined, 4500);
       }
-      const updated = processorRef.current?.getState(settingsRef.current);
+      const updated = processorRef.current?.getState(
+        settingsRef.current,
+        Date.now(),
+        performance.now(),
+        inMeetingModeRef.current
+      );
       if (updated) {
         rhythmRef.current = updated;
         setRhythm(updated);
@@ -1076,6 +1315,7 @@ export function useStillSession({
 
   return {
     videoRef,
+    secondaryVideoRef,
     status,
     errorMessage,
     edgeGlowActive,
@@ -1087,10 +1327,15 @@ export function useStillSession({
     diagnostics,
     rhythm,
     availableCameras,
+    inMeetingMode,
+    voiceCalibrating,
     startSession,
     stopSession,
     switchCamera,
+    toggleMeetingMode,
     setPostureManual,
+    confirmPosturePrompt,
+    calibrateVoiceComfort,
     snoozeCalmingSuggestion,
     markCalmingCompleted,
     captureNeutralPosture,

@@ -1,5 +1,6 @@
 export type ThemeMode = 'light' | 'dark';
-export type TabId = 'today' | 'patterns' | 'calm-tools' | 'notes' | 'settings';
+export type TabId = 'today' | 'patterns' | 'calm' | 'settings';
+export type SettingsSectionId = 'camera' | 'voice' | 'alerts' | 'data';
 export type PreviewMode = 'silhouette' | 'camera';
 export type DelegateMode = 'GPU' | 'CPU' | null;
 export type DetectionZoneId = 'left-brow' | 'right-brow' | 'lashes' | 'hairline';
@@ -10,6 +11,8 @@ export type PostureState = 'sitting' | 'standing';
 export type RestlessnessLevel = 'settled' | 'stirring' | 'restless';
 export type FaceTouchRegion = 'chin' | 'cheek' | 'noseMouth' | 'forehead';
 export type ReliefMoveKind = 'shoulderRoll' | 'neckTilt' | 'backShift' | 'neckRub';
+export type MicState = 'off' | 'active' | 'denied' | 'unavailable';
+export type VoiceComfortStatus = 'off' | 'quiet' | 'comfortable' | 'loud';
 export type CalmingTechniqueId =
   | 'cyclic-sigh'
   | 'steady-breath'
@@ -22,6 +25,12 @@ export interface CameraDeviceOption {
   label: string;
 }
 
+export interface PostureChangePrompt {
+  candidate: PostureState;
+  reason: string;
+  createdAt: number;
+}
+
 export interface PostureCalibration {
   neutralEyeSpan: number | null;
   neutralShoulderSpan: number | null;
@@ -32,6 +41,11 @@ export interface PostureCalibration {
   standFaceY: number | null;
   sitBgHash: number[] | null;
   standBgHash: number[] | null;
+  sitSecondaryHash: number[] | null;
+  standSecondaryHash: number[] | null;
+  sitSecondaryMassY: number | null;
+  standSecondaryMassY: number | null;
+  confirmedSwitches: number;
   updatedAt: number | null;
 }
 
@@ -47,18 +61,24 @@ export interface StillSettings {
   zoneScale: number; // multiplier on eye-width normalized halo, default 1.0
   activeZones: DetectionZoneId[];
   pinchFilterEnabled: boolean;
-  smartFalseAlarmGuard: boolean; // reduces false alarms from ear touches & drinking from a glass while keeping high brow recall
+  smartFalseAlarmGuard: boolean; // reduces false alarms from ear touches, drinking & top-down angles
   previewMode: PreviewMode;
   pinnedResponses: string[];
   checkedAnchors: string[];
   // Still Rhythm additions
-  selectedCameraId: string; // '' = system default, or specific webcam (e.g. Logitech)
-  workContext: WorkContext; // 'desk' (Logitech / sit-stand) vs 'portable' (laptop in meetings / bed)
+  selectedCameraId: string; // '' = automatic front-facing camera selection
+  dualCameraSitStand: boolean; // quietly uses 2nd camera at desk for sit/stand accuracy
+  workContext: WorkContext; // 'desk' (Logitech / sit-stand) vs 'portable' (laptop away / bed)
   restlessnessSuggestionsEnabled: boolean;
   restlessnessThreshold: number; // 45..85, default 65
   sitStandGuidanceEnabled: boolean;
   sitWindowMinutes: number; // gentle window to rise, default 40
   standWindowMinutes: number; // gentle window to sit, default 25
+  // Local Voice Volume (dB) & Audio-Visual Talking Detection
+  micEnabled: boolean; // default true (100% local loudness + speech band only)
+  voiceComfortMinDb: number; // default 46
+  voiceComfortMaxDb: number; // default 66
+  voiceCalOffsetDb: number; // learned via 3-second comfortable-voice calibration
 }
 
 export type AwarenessEventKind =
@@ -181,9 +201,11 @@ export interface UpperBodySnapshot {
   neckGap: number | null; // (shoulderMidY - chinY) / eyeSpan
   headCenter: Point2D | null;
   headRollDeg: number; // lateral head tilt angle in degrees
-  facialTension: number; // 0..1 blendshape composite (brow lowering + eye squint)
+  facialTension: number; // 0..1 blendshape composite (smiles excluded)
+  mouthOpenRatio: number; // 0..1 combined jawOpen + lip gap for visual speech detection
+  smileScore: number; // 0..1 smile blendshape average
   handNearFaceRegion: FaceTouchRegion | 'neck' | null;
-  bgHash: number[] | null; // 16x12 background-horizon luminance vector
+  bgHash: number[] | null; // lighting-resistant background-horizon gradient fingerprint
 }
 
 export interface FrameGeometry {
@@ -221,6 +243,16 @@ export interface LiveRhythmState {
   baselineReady: boolean;
   recentReliefLabel: string | null; // transient silent indicator in calibration only
   recentFaceTouchRegion: FaceTouchRegion | null;
+  // Audio-visual talking & Voice dB comfort state
+  isSpeaking: boolean;
+  speakingSource: 'audio-visual' | 'visual' | 'none';
+  voiceDb: number;
+  voiceStatus: VoiceComfortStatus;
+  micState: MicState;
+  // Dual-camera sit/stand confirmation state
+  dualCameraActive: boolean;
+  secondaryCameraLabel: string;
+  pendingPosturePrompt: PostureChangePrompt | null;
 }
 
 export type EngineStatus =

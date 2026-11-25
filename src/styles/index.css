@@ -3260,6 +3260,372 @@ input[type='range'] {
   color: var(--ink-muted);
 }
 
+/* ==========================================================================
+   Calm App Reorganization, Sub-Tabs, Meeting Pill, Voice dB Meter & PiP v2
+   ========================================================================== */
+
+/* Clean pill sub-tabs (used in Settings & Patterns) */
+.subtab-bar {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  align-self: flex-start;
+}
+
+.subtab-btn {
+  border: none;
+  background: transparent;
+  color: var(--ink-secondary);
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.subtab-btn:hover {
+  color: var(--ink);
+}
+
+.subtab-btn--active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Compact button utility */
+.btn-xs {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: var(--radius-pill);
+}
+
+/* Meeting / Auto-Speaking pill beside Desk/Away */
+.meeting-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.meeting-pill:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink-muted) 45%, var(--border-strong));
+}
+
+.meeting-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-muted);
+  opacity: 0.45;
+  transition: background-color 180ms ease, opacity 180ms ease;
+}
+
+.meeting-pill--active {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+.meeting-pill--active .meeting-pill-dot {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.meeting-pill--speaking {
+  background: var(--sage-soft);
+  border-color: color-mix(in srgb, var(--sage) 45%, transparent);
+  color: var(--sage);
+}
+
+.meeting-pill--speaking .meeting-pill-dot {
+  background: var(--sage);
+  opacity: 1;
+}
+
+/* Layer 2: Unified "Live Rhythm" Card (Desk Position + Voice dB + Quiet Row) */
+.unified-rhythm-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.rhythm-band {
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rhythm-band + .rhythm-band {
+  border-top: 1px solid var(--border);
+}
+
+.rhythm-band--quiet {
+  background: var(--bg-subtle);
+  padding: 14px 22px;
+}
+
+.rhythm-band-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.rhythm-band-title-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rhythm-band-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+
+.rhythm-band-sub strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.split-bar-track--inline {
+  width: 112px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* Rare, Gentle Dual-Camera Posture Change Confirmation Bar */
+.posture-confirm-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--sage-soft);
+  border: 1px solid color-mix(in srgb, var(--sage) 35%, transparent);
+}
+
+.posture-confirm-text {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.posture-confirm-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Live Voice Comfort Meter (dB) */
+.voice-status-tag {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--ink-muted);
+  border: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-status-tag--ok {
+  background: var(--sage-soft);
+  border-color: color-mix(in srgb, var(--sage) 38%, transparent);
+  color: var(--sage);
+}
+
+.voice-status-tag--loud {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--accent);
+}
+
+.voice-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.voice-meter-track {
+  position: relative;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition: border-color 220ms ease;
+}
+
+.voice-meter-track--compact {
+  height: 7px;
+}
+
+.voice-meter-track--loud {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.voice-comfort-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--sage) 24%, transparent);
+  border-left: 1px dashed color-mix(in srgb, var(--sage) 55%, transparent);
+  border-right: 1px dashed color-mix(in srgb, var(--sage) 55%, transparent);
+  pointer-events: none;
+}
+
+.voice-meter-fill {
+  position: relative;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--ink-muted) 55%, transparent);
+  transition: width 120ms ease-out, background-color 200ms ease;
+}
+
+.voice-meter-fill--ok {
+  background: var(--sage);
+}
+
+.voice-meter-fill--loud {
+  background: var(--accent);
+}
+
+.voice-scale-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  margin-top: -4px;
+}
+
+/* Layer 3 quiet footer row on Today */
+.today-quiet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 2px 4px;
+  font-size: 13px;
+}
+
+.today-quiet-note {
+  color: var(--ink-muted);
+}
+
+/* Inline CalibrationDrawer inside Settings -> Camera & Zones */
+.calibration-inline {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 20px 22px;
+}
+
+.calibration-body--inline {
+  padding: 0;
+  border-top: none;
+}
+
+/* Upgraded Floating Mini-Window (PiP) */
+.pip-mini-status {
+  font-size: 11px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pip-pacer-wrap {
+  padding: 4px 0;
+}
+
+.segmented--mini {
+  padding: 2px;
+}
+
+.segmented--mini .segmented-btn {
+  padding: 3px 9px;
+  font-size: 11.5px;
+}
+
+.pip-confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink);
+  padding-top: 2px;
+}
+
+.pip-confirm-btns {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pip-voice-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+}
+
+.pip-voice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+}
+
+.pip-voice-label {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.pip-voice-val {
+  color: var(--ink-secondary);
+  font-weight: 500;
+}
+
+.pip-voice-val--ok {
+  color: var(--sage);
+}
+
+.pip-voice-val--loud {
+  color: var(--accent);
+}
+
 @media (max-width: 600px) {
   .silent-strip-grid {
     grid-template-columns: 1fr;
@@ -3278,5 +3644,24 @@ input[type='range'] {
     flex-direction: column;
     align-items: flex-start;
     gap: 14px;
+  }
+
+  .rhythm-band {
+    padding: 16px;
+  }
+
+  .rhythm-band--quiet {
+    padding: 14px 16px;
+  }
+
+  .subtab-bar {
+    width: 100%;
+  }
+
+  .subtab-btn {
+    flex: 1 1 auto;
+    text-align: center;
+    padding: 7px 10px;
+    font-size: 13px;
   }
 }

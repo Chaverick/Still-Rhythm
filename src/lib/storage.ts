@@ -238,12 +238,17 @@ export const DEFAULT_SETTINGS: StillSettings = {
   checkedAnchors: [],
   // Still Rhythm defaults
   selectedCameraId: '',
+  dualCameraSitStand: true,
   workContext: 'desk',
   restlessnessSuggestionsEnabled: true,
   restlessnessThreshold: 65,
   sitStandGuidanceEnabled: true,
   sitWindowMinutes: 40,
   standWindowMinutes: 25,
+  micEnabled: true,
+  voiceComfortMinDb: 46,
+  voiceComfortMaxDb: 66,
+  voiceCalOffsetDb: 0,
 };
 
 export const EMPTY_CALIBRATION: PostureCalibration = {
@@ -256,6 +261,11 @@ export const EMPTY_CALIBRATION: PostureCalibration = {
   standFaceY: null,
   sitBgHash: null,
   standBgHash: null,
+  sitSecondaryHash: null,
+  standSecondaryHash: null,
+  sitSecondaryMassY: null,
+  standSecondaryMassY: null,
+  confirmedSwitches: 0,
   updatedAt: null,
 };
 

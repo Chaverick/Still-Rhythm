@@ -14,6 +14,7 @@ import type {
   UpperBodySnapshot,
   ZoneGeometry,
 } from '../types';
+import { computeLightingResistantEdgeHash } from './dualCameraPosture';
 
 const OCCLUSION_CACHE_MS = 1500;
 const OCCLUSION_CACHE_WITH_HAND_MS = 5000;
@@ -255,9 +256,9 @@ function analyzeHandMetrics(
 
 function extractBlendshapeSignals(
   categories: Array<{ categoryName: string; score: number }> | undefined
-): { facialTension: number; mouthSipScore: number } {
+): { facialTension: number; mouthSipScore: number; jawOpenScore: number; smileScore: number } {
   if (!categories || categories.length === 0) {
-    return { facialTension: 0, mouthSipScore: 0 };
+    return { facialTension: 0, mouthSipScore: 0, jawOpenScore: 0, smileScore: 0 };
   }
   let browDownL = 0;
   let browDownR = 0;
@@ -265,6 +266,8 @@ function extractBlendshapeSignals(
   let squintR = 0;
   let mouthPressL = 0;
   let mouthPressR = 0;
+  let mouthSmileL = 0;
+  let mouthSmileR = 0;
   let mouthPucker = 0;
   let mouthFunnel = 0;
   let jawOpen = 0;
@@ -288,6 +291,12 @@ function extractBlendshapeSignals(
       case 'mouthPressRight':
         mouthPressR = c.score;
         break;
+      case 'mouthSmileLeft':
+        mouthSmileL = c.score;
+        break;
+      case 'mouthSmileRight':
+        mouthSmileR = c.score;
+        break;
       case 'mouthPucker':
         mouthPucker = c.score;
         break;
@@ -301,10 +310,15 @@ function extractBlendshapeSignals(
   }
   const brow = (browDownL + browDownR) * 0.5;
   const squint = (squintL + squintR) * 0.5;
-  const jaw = (mouthPressL + mouthPressR) * 0.5;
+  const jawPress = (mouthPressL + mouthPressR) * 0.5;
+  const smileScore = (mouthSmileL + mouthSmileR) * 0.5;
+  // Smiling naturally crinkles the eyes (cheek raise) — discount squint when smiling!
+  const effectiveSquint = smileScore > 0.22 ? squint * Math.max(0, 1 - smileScore * 1.6) : squint;
   return {
-    facialTension: Math.min(1, brow * 0.5 + squint * 0.3 + jaw * 0.2),
+    facialTension: Math.min(1, brow * 0.55 + effectiveSquint * 0.28 + jawPress * 0.17),
     mouthSipScore: Math.max(mouthPucker, mouthFunnel, jawOpen * 0.85),
+    jawOpenScore: Math.max(jawOpen, mouthFunnel * 0.55),
+    smileScore,
   };
 }
 
@@ -447,8 +461,8 @@ export class LocalVisionEngine {
   }
 
   /**
-   * Samples a tiny 16x12 grayscale background-horizon fingerprint (top 40% & outer columns)
-   * every ~1.5s so Sit vs. Stand detection works even when a Logitech camera rises with a standing desk.
+   * Samples a lighting-resistant 16x12 background-horizon gradient fingerprint every ~1.5s
+   * so Sit vs. Stand detection works cleanly even when a webcam rises with a standing desk.
    */
   private sampleBackgroundHash(video: HTMLVideoElement, nowMs: number): number[] | null {
     if (nowMs - this.lastBgSampleMs < 1500 && this.lastBgHash) {
@@ -456,37 +470,16 @@ export class LocalVisionEngine {
     }
     this.lastBgSampleMs = nowMs;
 
-    try {
-      if (!this.bgCanvas) {
-        this.bgCanvas = document.createElement('canvas');
-        this.bgCanvas.width = 16;
-        this.bgCanvas.height = 12;
-      }
-      const ctx = this.bgCanvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return this.lastBgHash;
-      ctx.drawImage(video, 0, 0, 16, 12);
-      const data = ctx.getImageData(0, 0, 16, 12).data;
-
-      // Sample top 4 rows + outer 3 columns left/right (avoids center person silhouette)
-      const vals: number[] = [];
-      let sum = 0;
-      for (let y = 0; y < 12; y++) {
-        for (let x = 0; x < 16; x++) {
-          const isBgBand = y < 4 || x < 3 || x >= 13;
-          if (!isBgBand) continue;
-          const idx = (y * 16 + x) * 4;
-          const lum = (data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114) / 255;
-          vals.push(lum);
-          sum += lum;
-        }
-      }
-      // Mean-normalize so minor exposure changes don't look like a desk height change
-      const mean = vals.length > 0 ? sum / vals.length : 0.5;
-      this.lastBgHash = vals.map((v) => Math.round((v - mean) * 1000) / 1000);
-      return this.lastBgHash;
-    } catch {
-      return this.lastBgHash;
+    if (!this.bgCanvas) {
+      this.bgCanvas = document.createElement('canvas');
+      this.bgCanvas.width = 16;
+      this.bgCanvas.height = 12;
     }
+    const sample = computeLightingResistantEdgeHash(video, this.bgCanvas);
+    if (sample) {
+      this.lastBgHash = sample.edgeHash;
+    }
+    return this.lastBgHash;
   }
 
   detectFrame(
@@ -557,12 +550,25 @@ export class LocalVisionEngine {
 
     const hands = handResult.landmarks ?? [];
     const faceLandmarks = faceResult.faceLandmarks?.[0];
-    const { facialTension, mouthSipScore } = extractBlendshapeSignals(
+    const { facialTension, mouthSipScore, jawOpenScore, smileScore } = extractBlendshapeSignals(
       faceResult.faceBlendshapes?.[0]?.categories
     );
     if (mouthSipScore >= 0.2) {
       this.lastSipMouthMs = nowMs;
     }
+
+    let lipGapNorm = 0;
+    if (faceLandmarks && faceLandmarks.length > 455) {
+      const upLip = faceLandmarks[UPPER_LIP];
+      const loLip = faceLandmarks[LOWER_LIP];
+      const eyeL = faceLandmarks[OUTER_EYE_LEFT_IMG];
+      const eyeR = faceLandmarks[OUTER_EYE_RIGHT_IMG];
+      if (upLip && loLip && eyeL && eyeR) {
+        const refSpan = Math.max(0.05, distIso(eyeL, eyeR, aspect));
+        lipGapNorm = clamp01(Math.abs(loLip.y - upLip.y) / (refSpan * 0.45));
+      }
+    }
+    const mouthOpenRatio = Math.max(jawOpenScore, lipGapNorm);
 
     let usingOcclusionCache = false;
     let activeFace: CachedFace | null = null;
@@ -986,6 +992,8 @@ export class LocalVisionEngine {
       headCenter: activeFace?.headCenter ?? null,
       headRollDeg: activeFace?.headRollDeg ?? 0,
       facialTension,
+      mouthOpenRatio,
+      smileScore,
       handNearFaceRegion,
       bgHash: this.sampleBackgroundHash(video, nowMs),
     };

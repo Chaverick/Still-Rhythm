@@ -11,11 +11,12 @@ import {
   getLocalDateKey,
   totalFaceTouches,
   totalReliefMoves,
-  type LegacyStillSummary,
 } from '../lib/storage';
 import type { AwarenessEvent, DaySummary, FiveMinBucket, NoteEntry } from '../types';
+import { NotesView } from './NotesView';
 
 type MetricKey = 'calm' | 'standing' | 'redirected' | 'touches';
+type PatternsSubTab = 'story' | 'notes';
 
 interface PatternsViewProps {
   days: Record<string, DaySummary>;
@@ -23,10 +24,8 @@ interface PatternsViewProps {
   events: AwarenessEvent[];
   notes: NoteEntry[];
   restlessnessThreshold: number;
-  legacyStill: LegacyStillSummary;
-  onMigrateFromStill: () => void;
-  onExportData: () => void;
-  onImportFile: (file: File) => void;
+  onAddNote: (text: string, tags: string[]) => void;
+  onDeleteNote: (id: string) => void;
   onCopiedDigest: () => void;
 }
 
@@ -75,17 +74,15 @@ export function PatternsView({
   events,
   notes,
   restlessnessThreshold,
-  legacyStill,
-  onMigrateFromStill,
-  onExportData,
-  onImportFile,
+  onAddNote,
+  onDeleteNote,
   onCopiedDigest,
 }: PatternsViewProps) {
+  const [subTab, setSubTab] = useState<PatternsSubTab>('story');
   const [metric, setMetric] = useState<MetricKey>('calm');
   const [previewSample, setPreviewSample] = useState(false);
   const [selectedHourIdx, setSelectedHourIdx] = useState<number>(0);
   const timelineCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const todayKey = getLocalDateKey();
   const yesterdayKey = useMemo(() => {
@@ -179,6 +176,7 @@ export function PatternsView({
 
   // Draw calm Warm Paper / Editorial Dark synchronized timeline canvas
   useEffect(() => {
+    if (subTab !== 'story') return;
     const canvas = timelineCanvasRef.current;
     if (!canvas || activeStory.hourly.length === 0) return;
     const ctx = canvas.getContext('2d');
@@ -297,7 +295,7 @@ export function PatternsView({
       ctx.fillText(pt.shortLabel, x, h - 8);
     });
     ctx.textAlign = 'start';
-  }, [activeStory, restlessnessThreshold, selectedHourIdx]);
+  }, [activeStory, restlessnessThreshold, selectedHourIdx, subTab]);
 
   const handleTimelineClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -445,12 +443,6 @@ export function PatternsView({
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) onImportFile(file);
-    e.target.value = '';
-  };
-
   const activeDaySummary = previewSample
     ? {
         shoulderRolls: 7,
@@ -464,15 +456,49 @@ export function PatternsView({
   return (
     <div className="view-stack">
       <header className="page-intro">
-        <h1 className="page-title">Patterns &amp; daily story</h1>
+        <h1 className="page-title">Patterns &amp; notes</h1>
         <p className="page-lead">
           See how sitting length, leaning forward, shoulder adjustments, face touches, and
-          restlessness come together across your day — in plain, everyday language.
+          restlessness come together — alongside your own reflections.
         </p>
       </header>
 
-      {/* Daily Story & Plain-English Pattern Summary */}
-      <section className="editorial-section" aria-label="Daily pattern summary">
+      {/* Clean 2-pill Sub-Navigation: Daily Story & Trends | Notes & Reflections */}
+      <div className="subtab-bar" role="tablist" aria-label="Patterns sections">
+        <button
+          type="button"
+          role="tab"
+          id="patterns-tab-story"
+          aria-selected={subTab === 'story'}
+          className={`subtab-btn ${subTab === 'story' ? 'subtab-btn--active' : ''}`}
+          onClick={() => setSubTab('story')}
+        >
+          Daily story &amp; trends
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="patterns-tab-notes"
+          aria-selected={subTab === 'notes'}
+          className={`subtab-btn ${subTab === 'notes' ? 'subtab-btn--active' : ''}`}
+          onClick={() => setSubTab('notes')}
+        >
+          Notes &amp; reflections{notes.length > 0 ? ` (${notes.length})` : ''}
+        </button>
+      </div>
+
+      {subTab === 'notes' ? (
+        <NotesView
+          embedded
+          notes={notes}
+          events={events}
+          onAddNote={onAddNote}
+          onDeleteNote={onDeleteNote}
+        />
+      ) : (
+        <>
+          {/* Daily Story & Plain-English Pattern Summary */}
+          <section className="editorial-section" aria-label="Daily pattern summary">
         <div className="section-head-row">
           <div className="story-picker-row">
             <h2 className="section-heading">
@@ -846,53 +872,8 @@ export function PatternsView({
           ))}
         </div>
       </section>
-
-      {/* Portable Local Backup & Still Migration */}
-      <section className="portable-sync-box" aria-label="Move history between apps or computers">
-        <div className="portable-sync-copy">
-          <h3 className="portable-sync-title">Bring history from Still or another computer</h3>
-          <p className="portable-sync-desc">
-            Everything stays 100% locally in your browser with zero cloud servers. Import any JSON
-            backup from <strong>Still</strong> or <strong>Still Rhythm</strong> to merge your
-            history and settings safely.
-          </p>
-        </div>
-        <div className="portable-sync-actions">
-          {legacyStill.found && (
-            <button
-              type="button"
-              id="btn-progress-migrate-still"
-              className="btn btn-primary btn-sm"
-              onClick={onMigrateFromStill}
-            >
-              Copy from Still
-            </button>
-          )}
-          <button
-            type="button"
-            id="btn-progress-export"
-            className="btn btn-subtle btn-sm"
-            onClick={onExportData}
-          >
-            Export JSON
-          </button>
-          <button
-            type="button"
-            id="btn-progress-import"
-            className="btn btn-ghost btn-sm"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            Import &amp; merge JSON
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="sr-only"
-            onChange={handleFileChange}
-          />
-        </div>
-      </section>
+        </>
+      )}
     </div>
   );
 }
