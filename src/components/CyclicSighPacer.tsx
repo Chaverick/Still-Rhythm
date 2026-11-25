@@ -195,44 +195,49 @@ export function CyclicSighPacer({
   const phase = PHASES[phaseIdx];
   const approxMinutes = Math.max(1, Math.round((cyclesTarget * 13) / 60));
 
-  // Continuous scale & warm orange glow intensity driven smoothly by breathLevel (0..1)
-  const coreScale = running ? 0.62 + breathLevel * 0.44 : 0.72;
-  const haloScale = running ? 0.78 + breathLevel * 0.68 : 0.86;
-  const haloOpacity = running ? 0.24 + breathLevel * 0.66 : 0.22;
-  const glowSpread = running ? Math.round(14 + breathLevel * 34) : 12;
+  // Smooth editorial breathing geometry driven by breathLevel (0..1)
+  // Flat, matte, translucent — expands calmly inside a fine hairline dial
+  const innerFillScale = running ? 0.48 + breathLevel * 0.5 : 0.56;
+  const innerFillOpacity = running ? 0.14 + breathLevel * 0.24 : 0.12;
+  const auraScale = running ? 0.72 + breathLevel * 0.52 : 0.76;
+  const auraOpacity = running ? 0.16 + breathLevel * 0.44 : 0.12;
+  const ringBorderOpacity = running ? 0.32 + breathLevel * 0.55 : 0.28;
 
   return (
     <div className={`sigh-pacer sigh-pacer--luminous ${compact ? 'sigh-pacer--compact' : ''}`}>
-      {/* Expanding / Contracting Warm Orange Light Orb */}
-      <div className={`sigh-orb-stage ${compact ? 'sigh-orb-stage--compact' : ''}`} aria-hidden="true">
+      {/* Serene Editorial Concentric Breathing Dial (Diffused Warm Glow + Fine Hairline Rings) */}
+      <div
+        className={`sigh-dial-stage ${compact ? 'sigh-dial-stage--compact' : ''}`}
+        aria-hidden="true"
+      >
+        {/* Diffused ambient candlelight glow behind the dial */}
         <div
-          className="sigh-orb-halo"
+          className="sigh-dial-aura"
           style={{
-            transform: `scale(${haloScale.toFixed(3)})`,
-            opacity: haloOpacity.toFixed(3),
+            transform: `scale(${auraScale.toFixed(3)})`,
+            opacity: auraOpacity.toFixed(3),
           }}
         />
+
+        {/* Fixed outer hairline reference ring (full-breath boundary) */}
+        <div className="sigh-dial-outer" />
+
+        {/* Expanding / contracting matte translucent terracotta breath wave */}
         <div
-          className="sigh-orb-ring"
+          className="sigh-dial-wave"
           style={{
-            transform: `scale(${(0.7 + breathLevel * 0.48).toFixed(3)})`,
-            opacity: (running ? 0.28 + breathLevel * 0.5 : 0.2).toFixed(3),
+            transform: `scale(${innerFillScale.toFixed(3)})`,
+            backgroundColor: `rgba(217, 119, 87, ${innerFillOpacity.toFixed(3)})`,
+            borderColor: `rgba(217, 119, 87, ${ringBorderOpacity.toFixed(3)})`,
           }}
         />
-        <div
-          className={`sigh-orb sigh-orb--amber ${running ? 'sigh-orb--breathing' : ''}`}
-          style={{
-            transform: `scale(${coreScale.toFixed(3)})`,
-            boxShadow: `0 0 ${glowSpread}px ${Math.round(glowSpread * 0.35)}px rgba(232, 134, 68, ${(
-              0.24 +
-              breathLevel * 0.52
-            ).toFixed(2)})`,
-          }}
-        >
-          <span className="sigh-orb-phase-word">
+
+        {/* Crisp, calm centered editorial typography */}
+        <div className="sigh-dial-center">
+          <span className={`sigh-dial-kicker ${running ? 'sigh-dial-kicker--live' : ''}`}>
             {finished ? 'Calm' : running ? phase.shortLabel : 'Ready'}
           </span>
-          <span className="sigh-orb-count tabular">
+          <span className="sigh-dial-count tabular">
             {finished ? 'Done' : running ? `${Math.ceil(remainingSec)}s` : `${approxMinutes}m`}
           </span>
         </div>
