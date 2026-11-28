@@ -1,0 +1,22 @@
+{
+  "name": "Still Rhythm",
+  "short_name": "Still Rhythm",
+  "description": "100% on-device calm awareness, restlessness resets, sitting & standing rhythm, neck comfort, and next-day pattern summaries.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FAF9F5",
+  "theme_color": "#FAF9F5",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
