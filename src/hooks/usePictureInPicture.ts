@@ -461,21 +461,20 @@ export function usePictureInPicture(
             win.document.documentElement.setAttribute('data-theme', stateRef.current.theme);
             win.document.title = 'Still Rhythm';
 
+            // Inline all same-origin CSS rules directly from memory so the floating window
+            // renders styled immediately on frame 0 and never breaks (404) after a new deploy.
             for (const sheet of Array.from(document.styleSheets)) {
               try {
-                if (sheet.href) {
-                  const link = win.document.createElement('link');
-                  link.rel = 'stylesheet';
-                  link.href = sheet.href;
-                  win.document.head.appendChild(link);
-                } else if (sheet.cssRules) {
+                const cssText = Array.from(sheet.cssRules)
+                  .map((r) => r.cssText)
+                  .join('\n');
+                if (cssText) {
                   const style = win.document.createElement('style');
-                  style.textContent = Array.from(sheet.cssRules)
-                    .map((r) => r.cssText)
-                    .join('\n');
+                  style.textContent = cssText;
                   win.document.head.appendChild(style);
                 }
               } catch {
+                // Cross-origin stylesheet (e.g. Google Fonts) -> safe to link externally
                 if (sheet.href) {
                   const link = win.document.createElement('link');
                   link.rel = 'stylesheet';

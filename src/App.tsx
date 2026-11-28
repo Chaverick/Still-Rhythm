@@ -982,6 +982,9 @@ export function App() {
             settings={settings}
             rhythm={session.rhythm}
             inMeetingMode={session.inMeetingMode}
+            cameraOn={session.cameraOn}
+            micOn={session.micOn}
+            availableCameras={session.availableCameras}
             voiceCalibrating={session.voiceCalibrating}
             voiceCalProgress={session.voiceCalProgress}
             cameraAngleWarning={session.cameraAngleWarning}
@@ -992,6 +995,16 @@ export function App() {
             onOpenCameraSetup={handleOpenCameraSetup}
             onOpenVoiceSettings={handleOpenVoiceSettings}
             onUpdateSettings={updateSettings}
+            onToggleCamera={() => {
+              pip.primeCanvasVideo();
+              session.toggleCamera();
+            }}
+            onToggleMic={() => {
+              if (!settings.micEnabled && !session.micOn) {
+                updateSettings({ micEnabled: true });
+              }
+              void session.toggleMic();
+            }}
             onToggleMeetingMode={session.toggleMeetingMode}
             onClearSpeaking={session.clearSpeaking}
             onSetPostureManual={session.setPostureManual}
@@ -1002,7 +1015,10 @@ export function App() {
             onCompleteCalmingReset={handleCompleteCalmingReset}
             onStart={() => {
               pip.primeCanvasVideo();
-              void session.startSession();
+              if (!settings.micEnabled) {
+                updateSettings({ micEnabled: true });
+              }
+              void session.startSession(undefined, { withMic: true });
             }}
             onStop={session.stopSession}
             pipSupported={pip.isSupported}

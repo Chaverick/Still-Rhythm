@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { playSingingBowl, unlockAudio } from '../lib/audio';
 import { DualCameraMonitor } from '../lib/dualCameraPosture';
 import { RhythmSignalProcessor } from '../lib/rhythmSignals';
-import { appendPoseSample, appendTelemetry, updatePoseSampleOutcome } from '../lib/storage';
+import {
+  appendPoseSample,
+  appendTelemetry,
+  formatCameraLabel,
+  updatePoseSampleOutcome,
+} from '../lib/storage';
 import { checkModelsCached, LocalVisionEngine } from '../lib/vision';
 import { fireVisualDesktopBanner } from '../lib/visualAlerts';
 import { LocalVoiceMonitor, type VoiceCalibrationProgress } from '../lib/voiceMonitor';
@@ -141,6 +146,12 @@ export function useStillSession({
   const [inMeetingMode, setInMeetingMode] = useState(false);
   const inMeetingModeRef = useRef(inMeetingMode);
   inMeetingModeRef.current = inMeetingMode;
+  const [cameraOn, setCameraOn] = useState(false);
+  const cameraOnRef = useRef(cameraOn);
+  cameraOnRef.current = cameraOn;
+  const [micOn, setMicOn] = useState(false);
+  const micOnRef = useRef(micOn);
+  micOnRef.current = micOn;
   const [voiceCalibrating, setVoiceCalibrating] = useState(false);
   const [voiceCalProgress, setVoiceCalProgress] = useState<VoiceCalibrationProgress>({
     active: false,
@@ -334,6 +345,8 @@ export function useStillSession({
 
   const stopSession = useCallback(() => {
     runningRef.current = false;
+    cameraOnRef.current = false;
+    micOnRef.current = false;
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -351,9 +364,12 @@ export function useStillSession({
     goodAngleSinceMsRef.current = null;
     angleWarningAckedRef.current = false;
     setInMeetingMode(false);
+    setCameraOn(false);
+    setMicOn(false);
     setVoiceCalibrating(false);
     setStatus('idle');
     setErrorMessage(null);
+    setRhythm((prev) => ({ ...prev, micState: 'off', voiceStatus: 'off', isSpeaking: false }));
     setDiagnostics((d) => ({
       ...d,
       fps: 0,
@@ -368,7 +384,7 @@ export function useStillSession({
   }, [resetDwellState, stopCameraTracks]);
 
   const stepDetection = useCallback(() => {
-    if (!runningRef.current) return;
+    if (!runningRef.current || !cameraOnRef.current) return;
 
     const now = performance.now();
     const wallNow = Date.now();
@@ -820,9 +836,10 @@ export function useStillSession({
   }, [status, pipActive, pipWindow, stepDetection]);
 
   const startSession = useCallback(
-    async (overrideCameraId?: string) => {
+    async (overrideCameraId?: string, opts?: { withMic?: boolean }) => {
+      const startWithMic = opts?.withMic !== false;
       if (
-        runningRef.current ||
+        (runningRef.current && cameraOnRef.current) ||
         status === 'requesting-camera' ||
         status === 'loading-models' ||
         status === 'choosing-camera'
@@ -1035,7 +1052,7 @@ export function useStillSession({
             stream = bestStream;
             await attachAndWaitForFrame(video, stream, 900);
             if (bestScore >= 0) {
-              autoPickedNotice = `Using ${bestLabel} · best front view of ${candidates.length} cameras`;
+              autoPickedNotice = `Using ${formatCameraLabel(bestLabel)} · best front view of ${candidates.length} cameras`;
             }
           }
         } catch {
@@ -1066,9 +1083,9 @@ export function useStillSession({
 
       if (video) {
         video.onpause = () => {
-          if (runningRef.current) {
+          if (runningRef.current && cameraOnRef.current) {
             window.setTimeout(() => {
-              if (runningRef.current && video.paused) {
+              if (runningRef.current && cameraOnRef.current && video.paused) {
                 video.play().catch(() => {});
               }
             }, 60);
@@ -1078,6 +1095,8 @@ export function useStillSession({
 
       engineRef.current?.resetCache();
       runningRef.current = true;
+      cameraOnRef.current = true;
+      setCameraOn(true);
       lastDetectMsRef.current = 0;
       lastVideoTimeRef.current = -1;
       lastFrameAdvanceMsRef.current = performance.now();
@@ -1097,17 +1116,22 @@ export function useStillSession({
       }
       setWelcomeBack(null);
       appendTelemetry('session-start', 'Session started', {
-        cam: videoTrack?.label || 'default',
-        mic: settingsRef.current.micEnabled,
+        cam: formatCameraLabel(videoTrack?.label),
+        mic: startWithMic && settingsRef.current.micEnabled,
         desk: settingsRef.current.workContext,
       });
 
       setStatus('running');
       rafRef.current = requestAnimationFrame(runLoop);
 
-      // Start local microphone loudness & speech-band monitor if enabled (never blocks session if declined!)
-      if (settingsRef.current.micEnabled && voiceMonitorRef.current) {
-        void voiceMonitorRef.current.start();
+      // Switch mic ON automatically when starting a full session (never blocks if declined!)
+      if (startWithMic && settingsRef.current.micEnabled && voiceMonitorRef.current) {
+        void voiceMonitorRef.current.start().then((mState) => {
+          if (runningRef.current && mState === 'active') {
+            micOnRef.current = true;
+            setMicOn(true);
+          }
+        });
       }
 
       // Start lightweight secondary physical camera (320x240 @ 2 FPS) at desk for dual-camera sit/stand
@@ -1122,7 +1146,14 @@ export function useStillSession({
         void navigator.mediaDevices
           .enumerateDevices()
           .then((devices) => {
-            if (!runningRef.current || !secondaryVideoRef.current || !dualCamRef.current) return;
+            if (
+              !runningRef.current ||
+              !cameraOnRef.current ||
+              !secondaryVideoRef.current ||
+              !dualCamRef.current
+            ) {
+              return;
+            }
             const isVirtualOrDesk = (label: string) =>
               /desk view|virtual|obs|snap camera|ndi|mmhmm|loom/i.test(label);
             const otherCam = devices.find(
@@ -1149,7 +1180,7 @@ export function useStillSession({
 
       if (video && typeof video.requestVideoFrameCallback === 'function') {
         const onVideoFrame = () => {
-          if (!runningRef.current) return;
+          if (!runningRef.current || !cameraOnRef.current) return;
           lastFrameAdvanceMsRef.current = performance.now();
           stepDetection();
           rvfcRef.current = video.requestVideoFrameCallback?.(onVideoFrame) ?? null;
@@ -1160,19 +1191,130 @@ export function useStillSession({
     [refreshCameras, resetDwellState, runLoop, showWhisper, status, stepDetection, stopCameraTracks]
   );
 
-  // Dynamically react when user toggles micEnabled while a session is running
+  // Dynamically react ONLY when user toggles micEnabled from Settings while running
+  const prevMicEnabledRef = useRef(settings.micEnabled);
   useEffect(() => {
+    if (prevMicEnabledRef.current === settings.micEnabled) return;
+    prevMicEnabledRef.current = settings.micEnabled;
     if (status !== 'running') return;
     if (settings.micEnabled) {
-      void voiceMonitorRef.current?.start();
+      void voiceMonitorRef.current?.start().then((mState) => {
+        if (runningRef.current && mState === 'active') {
+          micOnRef.current = true;
+          setMicOn(true);
+        }
+      });
     } else {
       voiceMonitorRef.current?.stop();
+      micOnRef.current = false;
+      setMicOn(false);
+      setRhythm((prev) => ({ ...prev, micState: 'off', voiceStatus: 'off' }));
     }
   }, [status, settings.micEnabled]);
 
+  // Mic-only 4 FPS voice wave ticker when Camera is switched OFF while Mic stays ON
+  useEffect(() => {
+    if (!micOn || cameraOn) return;
+    const id = window.setInterval(() => {
+      const monitor = voiceMonitorRef.current;
+      if (!monitor || monitor.micState !== 'active') return;
+      const s = settingsRef.current;
+      const sample = monitor.sample(
+        performance.now(),
+        s.voiceComfortMinDb,
+        s.voiceComfortMaxDb,
+        s.voiceCalOffsetDb
+      );
+      setRhythm((prev) => {
+        const next: LiveRhythmState = {
+          ...prev,
+          voiceDb: sample.smoothedDb,
+          voiceLeqDb: sample.leqDb,
+          voiceNoiseFloorDb: sample.noiseFloorDb,
+          voiceHistoryDb: sample.historyDb,
+          voiceStatus: sample.status,
+          micState: sample.micState,
+        };
+        rhythmRef.current = next;
+        return next;
+      });
+    }, TARGET_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [micOn, cameraOn]);
+
+  // Independent Camera on/off switch
+  const toggleCamera = useCallback(() => {
+    if (cameraOnRef.current) {
+      cameraOnRef.current = false;
+      setCameraOn(false);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      stopCameraTracks();
+      dualCamRef.current?.stop();
+      engineRef.current?.resetCache();
+      resetDwellState();
+      setFrameGeometry(null);
+      lastFrameRef.current = null;
+      setCameraAngleWarning(null);
+      setDiagnostics((d) => ({
+        ...d,
+        fps: 0,
+        faceState: 'away',
+        poseActive: false,
+        cameraState: 'ended',
+        cameraStalled: false,
+        handsCount: 0,
+      }));
+      if (!micOnRef.current) {
+        stopSession();
+      } else {
+        showWhisper('Camera off · mic still live', undefined, 3000);
+      }
+    } else {
+      void startSession(undefined, { withMic: micOnRef.current });
+    }
+  }, [resetDwellState, showWhisper, startSession, stopCameraTracks, stopSession]);
+
+  // Independent Mic on/off switch
+  const toggleMic = useCallback(async () => {
+    if (micOnRef.current) {
+      voiceMonitorRef.current?.stop();
+      micOnRef.current = false;
+      setMicOn(false);
+      setVoiceCalibrating(false);
+      setRhythm((prev) => {
+        const next: LiveRhythmState = { ...prev, micState: 'off', voiceStatus: 'off' };
+        rhythmRef.current = next;
+        return next;
+      });
+      if (!cameraOnRef.current) {
+        stopSession();
+      } else {
+        showWhisper('Mic off · camera still watching', undefined, 3000);
+      }
+    } else {
+      unlockAudio();
+      const state = await voiceMonitorRef.current?.start();
+      if (state === 'active') {
+        micOnRef.current = true;
+        setMicOn(true);
+        runningRef.current = true;
+        setStatus('running');
+      } else {
+        showWhisper(
+          'Allow microphone access in Chrome to switch the mic on',
+          undefined,
+          4200
+        );
+      }
+    }
+  }, [showWhisper, stopSession]);
+
   // Dynamically react when user toggles dualCameraSitStand or switches Desk vs Away while running
   useEffect(() => {
-    if (status !== 'running') return;
+    if (status !== 'running' || !cameraOn) return;
     if (settings.workContext !== 'desk' || !settings.dualCameraSitStand) {
       dualCamRef.current?.stop();
       return;
@@ -1183,7 +1325,7 @@ export function useStillSession({
     void navigator.mediaDevices
       .enumerateDevices()
       .then((devices) => {
-        if (!runningRef.current || !secondaryVideoRef.current || !dualCamRef.current) return;
+        if (!runningRef.current || !cameraOnRef.current || !secondaryVideoRef.current || !dualCamRef.current) return;
         const isVirtualOrDesk = (label: string) =>
           /desk view|virtual|obs|snap camera|ndi|mmhmm|loom/i.test(label);
         const otherCam = devices.find(
@@ -1202,15 +1344,16 @@ export function useStillSession({
         }
       })
       .catch(() => {});
-  }, [status, settings.workContext, settings.dualCameraSitStand]);
+  }, [status, cameraOn, settings.workContext, settings.dualCameraSitStand]);
 
   // Switch cameras seamlessly (or pass '' to re-scan all cameras and pick the front-facing one)
   const switchCamera = useCallback(
     async (deviceId: string) => {
       if (!runningRef.current) return;
+      const keepMic = micOnRef.current;
       stopSession();
       window.setTimeout(() => {
-        void startSession(deviceId);
+        void startSession(deviceId, { withMic: keepMic });
       }, 120);
     },
     [startSession, stopSession]
@@ -1220,7 +1363,7 @@ export function useStillSession({
   useEffect(() => {
     if (status !== 'running') return;
     const interval = window.setInterval(() => {
-      if (pauseSheetOpenRef.current) return;
+      if (pauseSheetOpenRef.current || !cameraOnRef.current) return;
       if (document.visibilityState !== 'visible' && !pipActiveRef.current) return;
       const sinceFace = Date.now() - lastFaceSeenMsRef.current;
       if (sinceFace <= AWAY_PAUSE_CALM_MS) {
@@ -1251,7 +1394,7 @@ export function useStillSession({
       } else if (document.visibilityState === 'visible') {
         const hiddenAt = hiddenAtMsRef.current;
         hiddenAtMsRef.current = null;
-        if (hiddenAt && !pipActiveRef.current) {
+        if (hiddenAt && !pipActiveRef.current && cameraOnRef.current) {
           const awayMs = Date.now() - hiddenAt;
           if (awayMs >= WELCOME_BACK_THRESHOLD_MS) {
             triggerWelcomeBackToast({
@@ -1261,12 +1404,14 @@ export function useStillSession({
           }
         }
 
-        const track = streamRef.current?.getVideoTracks()[0];
-        if (!track || track.readyState !== 'live') {
-          stopSession();
-          showWhisper('Camera paused while away · tap Begin to resume', undefined, 6000);
-        } else if (videoRef.current && videoRef.current.paused) {
-          videoRef.current.play().catch(() => {});
+        if (cameraOnRef.current) {
+          const track = streamRef.current?.getVideoTracks()[0];
+          if (!track || track.readyState !== 'live') {
+            stopSession();
+            showWhisper('Camera paused while away · tap Begin to resume', undefined, 6000);
+          } else if (videoRef.current && videoRef.current.paused) {
+            videoRef.current.play().catch(() => {});
+          }
         }
       }
     };
@@ -1651,11 +1796,15 @@ export function useStillSession({
     rhythm,
     availableCameras,
     inMeetingMode,
+    cameraOn,
+    micOn,
     voiceCalibrating,
     voiceCalProgress,
     startSession,
     stopSession,
     switchCamera,
+    toggleCamera,
+    toggleMic,
     toggleMeetingMode,
     clearSpeaking,
     setPostureManual,

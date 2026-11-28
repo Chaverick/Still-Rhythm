@@ -3,6 +3,7 @@ import type { DailyStoryReport } from '../lib/patterns';
 import type { VoiceCalibrationProgress } from '../lib/voiceMonitor';
 import {
   CALMING_TECHNIQUES,
+  formatCameraLabel,
   formatDuration,
   formatShortDuration,
   totalFaceTouches,
@@ -11,6 +12,7 @@ import {
 import type {
   CalmingTechniqueId,
   CameraAngleWarning,
+  CameraDeviceOption,
   DaySummary,
   EngineStatus,
   FrameGeometry,
@@ -34,6 +36,9 @@ interface TodayViewProps {
   settings: StillSettings;
   rhythm: LiveRhythmState;
   inMeetingMode: boolean;
+  cameraOn: boolean;
+  micOn: boolean;
+  availableCameras: CameraDeviceOption[];
   voiceCalibrating: boolean;
   voiceCalProgress: VoiceCalibrationProgress;
   cameraAngleWarning: CameraAngleWarning | null;
@@ -44,6 +49,8 @@ interface TodayViewProps {
   onOpenCameraSetup: () => void;
   onOpenVoiceSettings: () => void;
   onUpdateSettings: (patch: Partial<StillSettings>) => void;
+  onToggleCamera: () => void;
+  onToggleMic: () => void;
   onToggleMeetingMode: () => void;
   onClearSpeaking: () => void;
   onSetPostureManual: (next: PostureState) => void;
@@ -79,6 +86,9 @@ export function TodayView({
   settings,
   rhythm,
   inMeetingMode,
+  cameraOn,
+  micOn,
+  availableCameras,
   voiceCalibrating,
   voiceCalProgress,
   cameraAngleWarning,
@@ -89,6 +99,8 @@ export function TodayView({
   onOpenCameraSetup,
   onOpenVoiceSettings,
   onUpdateSettings,
+  onToggleCamera,
+  onToggleMic,
   onToggleMeetingMode,
   onClearSpeaking,
   onSetPostureManual,
@@ -124,12 +136,18 @@ export function TodayView({
     status === 'choosing-camera';
   const pipActive = pipKind !== 'none';
   const name = settings.userName.trim();
+  const shortCameraName = formatCameraLabel(
+    diagnostics.cameraLabel ||
+      availableCameras.find((c) => c.deviceId === settings.selectedCameraId)?.label ||
+      availableCameras[0]?.label
+  );
 
   const headline = (() => {
-    if (status === 'requesting-camera') return 'Opening your camera & mic locally.';
+    if (status === 'requesting-camera') return 'Opening your camera & mic.';
     if (status === 'loading-models') return 'Preparing on-device awareness.';
     if (status === 'choosing-camera') return 'Finding the camera in front of you.';
     if (status === 'running') {
+      if (!cameraOn && micOn) return 'Mic active · camera off.';
       if (frameGeometry?.handInZone) {
         return name
           ? `${name}, noticing a hand near your brow.`
@@ -151,7 +169,7 @@ export function TodayView({
 
   const subline = (() => {
     if (status === 'requesting-camera') {
-      return '100% local in this browser tab — zero video or audio is ever recorded or sent.';
+      return '100% on-device in this tab — nothing is recorded or sent.';
     }
     if (status === 'loading-models') {
       return 'Loading local face, hand, and posture models from cache.';
@@ -163,15 +181,9 @@ export function TodayView({
       if (pipActive) {
         return 'Floating in your mini-window. Work in other tabs or apps freely.';
       }
-      const parts: string[] = [];
-      if (diagnostics.cameraLabel) parts.push(diagnostics.cameraLabel);
-      if (rhythm.dualCameraActive) parts.push('2-cam sit/stand');
-      if (rhythm.micState === 'active') parts.push('mic level live');
-      return parts.length > 0
-        ? `Watching locally · ${parts.join(' · ')}`
-        : 'Watching gently on-device. Keep working as usual.';
+      return '';
     }
-    return 'One click starts all local awareness — eyebrows, voice comfort, restlessness, and desk rhythm.';
+    return 'Begin switches your camera and mic on together, or toggle either below.';
   })();
 
   // Sit vs. Stand stretch progress
@@ -304,7 +316,7 @@ export function TodayView({
           ===================================================================== */}
       <section className="hero-section" aria-label="Session status">
         <TypewriterHeadline text={headline} />
-        <p className="hero-subline">{subline}</p>
+        {subline && <p className="hero-subline">{subline}</p>}
 
         <div className="hero-toolbar">
           {!isRunning ? (
@@ -390,6 +402,45 @@ export function TodayView({
               <span className="meeting-pill-dot" aria-hidden="true" />
               {inMeetingMode ? 'In meeting' : 'Meeting'}
             </button>
+          )}
+        </div>
+
+        {/* Clean Camera & Mic on/off switches (both switch on automatically when you start) */}
+        <div className="sensor-switch-row" role="group" aria-label="Camera and microphone switches">
+          <button
+            type="button"
+            id="btn-switch-camera"
+            role="switch"
+            aria-checked={cameraOn}
+            disabled={isBusy}
+            className={`sensor-toggle-pill ${cameraOn ? 'sensor-toggle-pill--on' : ''}`}
+            title={cameraOn ? `Turn ${shortCameraName} off` : `Turn ${shortCameraName} on`}
+            onClick={onToggleCamera}
+          >
+            <span>{shortCameraName}</span>
+            <span className="sensor-mini-switch" aria-hidden="true">
+              <span className="sensor-mini-thumb" />
+            </span>
+          </button>
+
+          <button
+            type="button"
+            id="btn-switch-mic"
+            role="switch"
+            aria-checked={micOn}
+            disabled={isBusy}
+            className={`sensor-toggle-pill ${micOn ? 'sensor-toggle-pill--on' : ''}`}
+            title={micOn ? 'Turn mic off' : 'Turn mic on'}
+            onClick={onToggleMic}
+          >
+            <span>Mic</span>
+            <span className="sensor-mini-switch" aria-hidden="true">
+              <span className="sensor-mini-thumb" />
+            </span>
+          </button>
+
+          {cameraOn && rhythm.dualCameraActive && (
+            <span className="rhythm-quiet-tag">2 cams</span>
           )}
         </div>
 

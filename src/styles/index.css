@@ -4350,4 +4350,70 @@ input[type='range'] {
   transition: left 220ms ease;
 }
 
+/* Clean Camera & Mic on/off switches under Today hero toolbar */
+.sensor-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sensor-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 11px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.sensor-toggle-pill:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.sensor-toggle-pill--on {
+  border-color: color-mix(in srgb, var(--sage) 42%, var(--border));
+  background: color-mix(in srgb, var(--sage-soft) 55%, var(--surface));
+  color: var(--ink);
+}
+
+.sensor-mini-switch {
+  position: relative;
+  width: 26px;
+  height: 15px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--ink-muted) 28%, transparent);
+  flex-shrink: 0;
+  transition: background-color 160ms ease;
+}
+
+.sensor-toggle-pill--on .sensor-mini-switch {
+  background: var(--sage);
+}
+
+.sensor-mini-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+  transition: transform 160ms ease;
+}
+
+.sensor-toggle-pill--on .sensor-mini-thumb {
+  transform: translateX(11px);
+}
+
+
 

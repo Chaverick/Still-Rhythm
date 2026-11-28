@@ -935,3 +935,29 @@ export function getPoseSampleStats(samples: LabeledPoseSample[] = loadPoseSample
     eyeScratchCount,
   };
 }
+
+/**
+ * Shortens verbose OS/USB camera labels like "MacBook Air Camera (0000:0001)"
+ * or "FaceTime HD Camera (Built-in)" into clean human labels ("MacBook camera").
+ */
+export function formatCameraLabel(raw: string | undefined | null): string {
+  if (!raw || !raw.trim()) return 'Camera';
+  const clean = raw
+    .replace(/\s*\([0-9a-fA-F]{4}:[0-9a-fA-F]{4}\)\s*/g, '')
+    .replace(/\s*\(Built-in\)\s*/gi, '')
+    .trim();
+  if (/macbook|facetime/i.test(clean)) return 'MacBook camera';
+  if (/iphone|continuity/i.test(clean)) return 'iPhone camera';
+  if (/ipad/i.test(clean)) return 'iPad camera';
+  if (/logi(tech)?/i.test(clean)) {
+    const model = clean
+      .replace(/^logitech\s*/i, '')
+      .replace(/^logi\s*/i, '')
+      .replace(/\b(hd|pro|usb|webcam|camera)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return model ? `Logitech ${model}` : 'Logitech camera';
+  }
+  return clean.length > 22 ? `${clean.slice(0, 21).trim()}…` : clean;
+}
+
