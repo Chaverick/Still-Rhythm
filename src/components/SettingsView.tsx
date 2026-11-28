@@ -8,6 +8,7 @@ import {
   loadTelemetry,
   type LegacyStillSummary,
 } from '../lib/storage';
+import type { VoiceCalibrationProgress } from '../lib/voiceMonitor';
 import type {
   CameraDeviceOption,
   FrameGeometry,
@@ -34,6 +35,7 @@ interface SettingsViewProps {
   legacyStill: LegacyStillSummary;
   sessionRunning: boolean;
   voiceCalibrating: boolean;
+  voiceCalProgress: VoiceCalibrationProgress;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   frameGeometry: FrameGeometry | null;
   dwellSec: number;
@@ -73,6 +75,7 @@ export function SettingsView({
   legacyStill,
   sessionRunning,
   voiceCalibrating,
+  voiceCalProgress,
   videoRef,
   frameGeometry,
   dwellSec,
@@ -166,7 +169,8 @@ export function SettingsView({
                 <div className="toggle-copy">
                   <div className="toggle-title">Microphone voice meter (dB) &amp; talking pause</div>
                   <p className="toggle-desc">
-                    100% local in memory — shows your loudness bar and pauses restlessness while speaking.
+                    100% local in memory — shows your loudness bar, filters keyboard clacks, and
+                    pauses restlessness while speaking.
                   </p>
                 </div>
                 <button
@@ -193,6 +197,23 @@ export function SettingsView({
                         : 'Default scale'}
                   </span>
                 </div>
+                <p className="toggle-desc">
+                  Every Mac and webcam mic reads volume differently. Tapping below listens for 3
+                  seconds while you talk normally and shifts the meter so your natural voice sits in
+                  the middle of the green zone (56 dB) — without changing your Mac&rsquo;s actual
+                  mic volume. Keyboard clacks are filtered out automatically.
+                </p>
+                {voiceCalibrating && (
+                  <div className="voice-cal-banner" role="status" aria-live="polite">
+                    <span>
+                      Speak a normal sentence for <strong>{voiceCalProgress.remainingSec || 3}s</strong>{' '}
+                      — centering green zone on your voice…
+                    </span>
+                    <span className="voice-cal-badge">
+                      {voiceCalProgress.hearingVoice ? 'Hearing you ✓' : 'Listening…'}
+                    </span>
+                  </div>
+                )}
                 <div className="welcome-actions">
                   <button
                     type="button"
@@ -201,7 +222,9 @@ export function SettingsView({
                     disabled={voiceCalibrating}
                     onClick={onCalibrateVoice}
                   >
-                    {voiceCalibrating ? 'Listening (3s)…' : 'Set my comfortable voice (3s)'}
+                    {voiceCalibrating
+                      ? `Listening (${voiceCalProgress.remainingSec || 3}s)…`
+                      : 'Set my comfortable voice (3s)'}
                   </button>
                   {settings.voiceCalOffsetDb !== 0 && (
                     <button

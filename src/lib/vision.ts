@@ -93,6 +93,7 @@ interface CachedFace {
   faceHeight: number;
   eyeSpan: number;
   sideAngle: boolean;
+  yawSymmetry: number;
   topDownStrength: number; // 0 (eye-level) .. 1 (steep high-mounted camera looking down)
   topDownAngle: boolean;
 }
@@ -592,7 +593,19 @@ export class LocalVisionEngine {
       const faceHeight = distIso(foreheadTop, chinBottom, aspect);
       const heightEquivSpan = faceHeight * 0.68;
       const robustScale = Math.max(0.05, rawEyeSpan, heightEquivSpan);
-      const sideAngle = heightEquivSpan > 0.04 && rawEyeSpan / heightEquivSpan < 0.82;
+
+      // True side-angle check using horizontal nose-to-cheek symmetry (face-shape independent!).
+      // Straight-on is ~0.82..1.0; only drops < 0.56 when genuinely turned/angled >30 deg sideways.
+      const noseTip = faceLandmarks[NOSE_TIP] ?? noseBridge;
+      const rightFaceEdge = faceLandmarks[234] ?? leftOuter;
+      const leftFaceEdge = faceLandmarks[454] ?? rightOuter;
+      const distToLeftImg = Math.abs(noseTip.x - rightFaceEdge.x);
+      const distToRightImg = Math.abs(leftFaceEdge.x - noseTip.x);
+      const yawSymmetry = clamp01(
+        1 - Math.abs(distToLeftImg - distToRightImg) / Math.max(0.01, distToLeftImg + distToRightImg)
+      );
+      const sideAngle = yawSymmetry < 0.56;
+
       const topDownStrength = computeTopDownStrength(
         faceLandmarks,
         rawEyeSpan,
@@ -643,6 +656,7 @@ export class LocalVisionEngine {
         faceHeight,
         eyeSpan: robustScale,
         sideAngle,
+        yawSymmetry,
         topDownStrength,
         topDownAngle,
       };
@@ -1030,6 +1044,7 @@ export class LocalVisionEngine {
       facePresent: activeFace !== null,
       usingOcclusionCache,
       sideAngle: Boolean(activeFace?.sideAngle),
+      yawSymmetry: activeFace?.yawSymmetry ?? 1,
       topDownAngle: Boolean(activeFace?.topDownAngle),
       topDownStrength: activeFace?.topDownStrength ?? 0,
       faceEdgeClipped,

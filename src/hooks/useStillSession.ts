@@ -5,7 +5,7 @@ import { RhythmSignalProcessor } from '../lib/rhythmSignals';
 import { appendPoseSample, appendTelemetry, updatePoseSampleOutcome } from '../lib/storage';
 import { checkModelsCached, LocalVisionEngine } from '../lib/vision';
 import { fireVisualDesktopBanner } from '../lib/visualAlerts';
-import { LocalVoiceMonitor } from '../lib/voiceMonitor';
+import { LocalVoiceMonitor, type VoiceCalibrationProgress } from '../lib/voiceMonitor';
 import { WakeLockController } from '../lib/wakeLock';
 import type {
   CameraAngleWarning,
@@ -142,6 +142,12 @@ export function useStillSession({
   const inMeetingModeRef = useRef(inMeetingMode);
   inMeetingModeRef.current = inMeetingMode;
   const [voiceCalibrating, setVoiceCalibrating] = useState(false);
+  const [voiceCalProgress, setVoiceCalProgress] = useState<VoiceCalibrationProgress>({
+    active: false,
+    remainingSec: 0,
+    hearingVoice: false,
+    samplesCount: 0,
+  });
   const [rhythm, setRhythm] = useState<LiveRhythmState>(() =>
     processorRef.current!.getState(settings)
   );
@@ -583,13 +589,23 @@ export function useStillSession({
       }
     }
 
-    // Proactive camera-angle check: if angle is badly tilted/side/clipped for >=6s, pause brow alerts & ask user
+    // Proactive camera-angle tip: NEVER pauses brow tracking or alerts — just gently notifies if the angle shifts noticeably worse than your normal view
     if (frame.facePresent && !frame.usingOcclusionCache && !angleWarningAckedRef.current) {
+      const cal = calibrationRef.current;
+      const sideLimit =
+        cal.acceptedYawSymmetry !== null && cal.acceptedYawSymmetry !== undefined
+          ? Math.max(0.36, cal.acceptedYawSymmetry - 0.14)
+          : 0.54;
+      const topDownLimit =
+        cal.acceptedTopDownStrength !== null && cal.acceptedTopDownStrength !== undefined
+          ? Math.min(0.75, cal.acceptedTopDownStrength + 0.16)
+          : 0.48;
+
       const badReason: CameraAngleWarning['reason'] | null = frame.faceEdgeClipped
         ? 'edge'
-        : frame.sideAngle
+        : frame.yawSymmetry < sideLimit
           ? 'side'
-          : frame.topDownStrength >= 0.44
+          : frame.topDownStrength >= topDownLimit
             ? 'top-down'
             : null;
 
@@ -613,10 +629,10 @@ export function useStillSession({
             sinceMs: wallNow,
           };
           setCameraAngleWarning(warn);
-          resetDwellState();
           appendTelemetry('camera-angle-warn', label, {
             reason: badReason,
-            side: frame.sideAngle,
+            yawSym: Number(frame.yawSymmetry.toFixed(2)),
+            sideLimit: Number(sideLimit.toFixed(2)),
             topDown: Number(frame.topDownStrength.toFixed(2)),
           });
         }
@@ -635,8 +651,8 @@ export function useStillSession({
       badAngleSinceMsRef.current = null;
     }
 
-    // Classic Still two-stage gentle brow awareness alerting logic (never blocked by welcomeBack toast!)
-    if (!pauseSheetOpenRef.current && !cameraAngleWarningRef.current) {
+    // Classic Still two-stage gentle brow awareness alerting logic (never paused by camera-angle tip or welcomeBack toast!)
+    if (!pauseSheetOpenRef.current) {
       if (frame.handInZone) {
         lastHandInZoneMsRef.current = now;
         const nextDwell = Math.min(s.stage2DwellSec + 1.5, dwellRef.current + dt);
@@ -1270,6 +1286,22 @@ export function useStillSession({
     };
   }, [stopCameraTracks]);
 
+  // Poll live calibration progress (countdown & "Hearing you ✓") while 3s Set My Voice runs
+  useEffect(() => {
+    if (!voiceCalibrating) {
+      setVoiceCalProgress({ active: false, remainingSec: 0, hearingVoice: false, samplesCount: 0 });
+      return;
+    }
+    const update = () => {
+      if (voiceMonitorRef.current) {
+        setVoiceCalProgress(voiceMonitorRef.current.getCalibrationProgress());
+      }
+    };
+    update();
+    const id = window.setInterval(update, 180);
+    return () => window.clearInterval(id);
+  }, [voiceCalibrating]);
+
   const toggleMeetingMode = useCallback(() => {
     setInMeetingMode((prev) => {
       const next = !prev;
@@ -1282,6 +1314,28 @@ export function useStillSession({
       );
       return next;
     });
+  }, [showWhisper]);
+
+  const clearSpeaking = useCallback(() => {
+    const cur = rhythmRef.current;
+    processorRef.current?.clearSpeakingOverride(20_000);
+    const updated = processorRef.current?.getState(
+      settingsRef.current,
+      Date.now(),
+      performance.now(),
+      inMeetingModeRef.current
+    );
+    if (updated) {
+      rhythmRef.current = updated;
+      setRhythm(updated);
+    }
+    wasSpeakingRef.current = false;
+    appendTelemetry('speaking-cleared', 'User dismissed false Speaking state', {
+      db: cur.voiceDb,
+      lips: cur.lipTransitions,
+      src: cur.speakingSource,
+    });
+    showWhisper('Cleared · paused speaking detection for 20s', undefined, 3200);
   }, [showWhisper]);
 
   // Manual controls for posture, calming resets, and 1-tap calibration
@@ -1494,12 +1548,23 @@ export function useStillSession({
   }, [showWhisper]);
 
   const acknowledgeCameraAngle = useCallback(() => {
+    const f = lastFrameRef.current;
     angleWarningAckedRef.current = true;
     badAngleSinceMsRef.current = null;
     goodAngleSinceMsRef.current = null;
     setCameraAngleWarning(null);
-    appendTelemetry('camera-angle-ack', 'User chose to keep watching at current camera angle');
-    showWhisper('Keeping watch at this angle for this session', undefined, 3200);
+    if (f && f.facePresent) {
+      onUpdateCalibrationRef.current({
+        acceptedYawSymmetry: Number(f.yawSymmetry.toFixed(3)),
+        acceptedTopDownStrength: Number(f.topDownStrength.toFixed(3)),
+        updatedAt: Date.now(),
+      });
+    }
+    appendTelemetry('camera-angle-ack', 'Saved current camera angle as user normal view', {
+      yawSym: f ? Number(f.yawSymmetry.toFixed(2)) : null,
+      topDown: f ? Number(f.topDownStrength.toFixed(2)) : null,
+    });
+    showWhisper('Saved this as your normal camera view', undefined, 3400);
   }, [showWhisper]);
 
   const logFalseAlarmTelemetry = useCallback(
@@ -1584,10 +1649,12 @@ export function useStillSession({
     availableCameras,
     inMeetingMode,
     voiceCalibrating,
+    voiceCalProgress,
     startSession,
     stopSession,
     switchCamera,
     toggleMeetingMode,
+    clearSpeaking,
     setPostureManual,
     confirmPosturePrompt,
     calibrateVoiceComfort,

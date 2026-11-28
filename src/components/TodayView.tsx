@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { DailyStoryReport } from '../lib/patterns';
+import type { VoiceCalibrationProgress } from '../lib/voiceMonitor';
 import {
   CALMING_TECHNIQUES,
   formatDuration,
@@ -33,6 +34,7 @@ interface TodayViewProps {
   rhythm: LiveRhythmState;
   inMeetingMode: boolean;
   voiceCalibrating: boolean;
+  voiceCalProgress: VoiceCalibrationProgress;
   cameraAngleWarning: CameraAngleWarning | null;
   morningStory: DailyStoryReport | null;
   onDismissMorningStory: () => void;
@@ -42,6 +44,7 @@ interface TodayViewProps {
   onOpenVoiceSettings: () => void;
   onUpdateSettings: (patch: Partial<StillSettings>) => void;
   onToggleMeetingMode: () => void;
+  onClearSpeaking: () => void;
   onSetPostureManual: (next: PostureState) => void;
   onConfirmPosturePrompt: (accepted: boolean) => void;
   onAcknowledgeCameraAngle: () => void;
@@ -76,6 +79,7 @@ export function TodayView({
   rhythm,
   inMeetingMode,
   voiceCalibrating,
+  voiceCalProgress,
   cameraAngleWarning,
   morningStory,
   onDismissMorningStory,
@@ -85,6 +89,7 @@ export function TodayView({
   onOpenVoiceSettings,
   onUpdateSettings,
   onToggleMeetingMode,
+  onClearSpeaking,
   onSetPostureManual,
   onConfirmPosturePrompt,
   onAcknowledgeCameraAngle,
@@ -226,15 +231,16 @@ export function TodayView({
         />
       )}
 
-      {/* Contextual: Proactive Camera-Angle Check (pauses brow false alarms until adjusted or confirmed) */}
+      {/* Contextual: Non-blocking Camera-Angle Tip (tracking & brow alerts keep running normally) */}
       {isRunning && cameraAngleWarning && (
-        <section className="nudge-card" role="status" aria-live="polite" aria-label="Camera angle check">
+        <section className="nudge-card" role="status" aria-live="polite" aria-label="Camera angle tip">
           <div className="welcome-header">
-            <span className="section-label">Camera angle check · alerts paused</span>
+            <span className="section-label">Camera angle tip · still watching</span>
           </div>
           <p className="nudge-copy">
-            <strong>{cameraAngleWarning.label}</strong> — this can cause false alarms. Adjust your
-            camera straight on, or confirm to keep watching as is.
+            <strong>{cameraAngleWarning.label}</strong> — tracking and alerts are still active,
+            though a steep angle can occasionally cause false alarms. Adjust if needed, or save this
+            as your normal desk view.
           </p>
           <div className="welcome-actions">
             <button
@@ -243,7 +249,7 @@ export function TodayView({
               className="btn btn-subtle btn-sm"
               onClick={onAcknowledgeCameraAngle}
             >
-              Keep watching anyway
+              My camera is fine
             </button>
             <button
               type="button"
@@ -370,27 +376,32 @@ export function TodayView({
             </button>
           </div>
 
-          <button
-            type="button"
-            id="btn-meeting-toggle"
-            className={`meeting-pill meeting-pill--compact ${
-              inMeetingMode
-                ? 'meeting-pill--active'
-                : isRunning && rhythm.isSpeaking
-                  ? 'meeting-pill--speaking'
-                  : ''
-            }`}
-            aria-pressed={inMeetingMode}
-            title="Pauses restlessness during listen-only meetings (talking is also detected automatically)"
-            onClick={onToggleMeetingMode}
-          >
-            <span className="meeting-pill-dot" aria-hidden="true" />
-            {inMeetingMode
-              ? 'In meeting'
-              : isRunning && rhythm.isSpeaking
-                ? 'Speaking'
-                : 'Meeting'}
-          </button>
+          {isRunning && rhythm.isSpeaking && !inMeetingMode ? (
+            <button
+              type="button"
+              id="btn-clear-speaking"
+              className="meeting-pill meeting-pill--compact meeting-pill--speaking"
+              title="Auto-detected speaking — click if you're not talking to clear for 20s"
+              onClick={onClearSpeaking}
+            >
+              <span className="meeting-pill-dot" aria-hidden="true" />
+              Speaking · ✕
+            </button>
+          ) : (
+            <button
+              type="button"
+              id="btn-meeting-toggle"
+              className={`meeting-pill meeting-pill--compact ${
+                inMeetingMode ? 'meeting-pill--active' : ''
+              }`}
+              aria-pressed={inMeetingMode}
+              title="Pauses restlessness during listen-only meetings (talking is also detected automatically)"
+              onClick={onToggleMeetingMode}
+            >
+              <span className="meeting-pill-dot" aria-hidden="true" />
+              {inMeetingMode ? 'In meeting' : 'Meeting'}
+            </button>
+          )}
         </div>
 
         {/* Only show Auto-PiP tip when Chrome has explicitly blocked it */}
@@ -686,9 +697,12 @@ export function TodayView({
                   type="button"
                   className="text-link-btn"
                   disabled={voiceCalibrating}
+                  title="Talk normally for 3 seconds to center the green zone on your natural voice (does not change Mac mic volume)"
                   onClick={onCalibrateVoice}
                 >
-                  {voiceCalibrating ? 'Listening (3s)…' : 'Set my voice'}
+                  {voiceCalibrating
+                    ? `Listening (${voiceCalProgress.remainingSec || 3}s)…`
+                    : 'Set my voice'}
                 </button>
               ) : (
                 <button
@@ -701,6 +715,18 @@ export function TodayView({
               )}
             </div>
           </div>
+
+          {voiceCalibrating && (
+            <div className="voice-cal-banner" role="status" aria-live="polite">
+              <span>
+                Speak normally for <strong>{voiceCalProgress.remainingSec || 3}s</strong> — centering
+                green zone on your voice
+              </span>
+              <span className="voice-cal-badge">
+                {voiceCalProgress.hearingVoice ? 'Hearing you ✓' : 'Listening…'}
+              </span>
+            </div>
+          )}
 
           <div
             className={`voice-meter-track ${
@@ -733,6 +759,10 @@ export function TodayView({
             </span>
             <span>Loud</span>
           </div>
+          <p className="voice-help-note">
+            Keyboard clacks filtered · 3s &ldquo;Set my voice&rdquo; centers the green zone to your
+            mic without changing Mac volume.
+          </p>
         </div>
         )}
 

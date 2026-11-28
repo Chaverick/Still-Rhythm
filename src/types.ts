@@ -46,6 +46,8 @@ export interface PostureCalibration {
   sitSecondaryMassY: number | null;
   standSecondaryMassY: number | null;
   confirmedSwitches: number;
+  acceptedYawSymmetry?: number | null;
+  acceptedTopDownStrength?: number | null;
   updatedAt: number | null;
 }
 
@@ -215,6 +217,7 @@ export interface FrameGeometry {
   facePresent: boolean;
   usingOcclusionCache: boolean;
   sideAngle: boolean;
+  yawSymmetry: number; // 1.0 = dead-on straight, drops <0.56 when genuinely angled sideways
   topDownAngle: boolean;
   topDownStrength: number; // 0..1 steep downward pitch strength
   faceEdgeClipped: boolean; // face cut off or far off-center
@@ -313,6 +316,7 @@ export type TelemetryEventKind =
   | 'camera-angle-warn'
   | 'camera-angle-ack'
   | 'speaking-start'
+  | 'speaking-cleared'
   | 'bg-audio-ignored'
   | 'posture-prompt'
   | 'posture-confirm'

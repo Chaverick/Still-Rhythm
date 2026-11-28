@@ -102,6 +102,7 @@ export class RhythmSignalProcessor {
   private mouthWindow: Array<{ t: number; open: number }> = [];
   private lastAudioVisualSpeakMs = 0;
   private lastVisualSpeakMs = 0;
+  private suppressSpeakingUntilMs = 0;
   private lastLipTransitions = 0;
   private backgroundAudioIgnored = false;
   private lastVoiceSample: VoiceSample = {
@@ -379,6 +380,18 @@ export class RhythmSignalProcessor {
     this.restlessnessEma = Math.max(22, this.restlessnessEma - 24);
   }
 
+  /**
+   * Lets the user 1-click dismiss a false "Speaking" detection and pauses
+   * auto-speaking for 20 seconds so it doesn't immediately flicker back on.
+   */
+  clearSpeakingOverride(durationMs = 20_000, nowPerfMs: number = performance.now()): void {
+    this.lastAudioVisualSpeakMs = 0;
+    this.lastVisualSpeakMs = 0;
+    this.mouthWindow = [];
+    this.lastLipTransitions = 0;
+    this.suppressSpeakingUntilMs = nowPerfMs + durationMs;
+  }
+
   resetSession(calibration: PostureCalibration): void {
     this.samples = [];
     this.mouthWindow = [];
@@ -407,6 +420,7 @@ export class RhythmSignalProcessor {
     this.neutralSamples = 0;
     this.lastAudioVisualSpeakMs = 0;
     this.lastVisualSpeakMs = 0;
+    this.suppressSpeakingUntilMs = 0;
     this.applyCalibration(calibration);
   }
 
@@ -424,10 +438,13 @@ export class RhythmSignalProcessor {
           ? 'stirring'
           : 'settled';
 
+    const speakingSuppressed = nowPerfMs < this.suppressSpeakingUntilMs;
     const audioVisualActive =
+      !speakingSuppressed &&
       this.lastAudioVisualSpeakMs > 0 &&
       nowPerfMs - this.lastAudioVisualSpeakMs <= AUDIO_VISUAL_SPEAK_GRACE_MS;
     const visualActive =
+      !speakingSuppressed &&
       this.lastVisualSpeakMs > 0 &&
       nowPerfMs - this.lastVisualSpeakMs <= VISUAL_ONLY_SPEAK_GRACE_MS;
     const isSpeaking = audioVisualActive || visualActive;
@@ -592,7 +609,8 @@ export class RhythmSignalProcessor {
 
     // 2. Strict Audio-Visual Lip-Sync Talking Detection (ignores background audio when lips are still)
     this.backgroundAudioIgnored = false;
-    if (!frame.usingOcclusionCache) {
+    const speakingSuppressed = nowMs < this.suppressSpeakingUntilMs;
+    if (!frame.usingOcclusionCache && !speakingSuppressed) {
       this.mouthWindow.push({ t: nowMs, open: ub.mouthOpenRatio });
       while (this.mouthWindow.length > 0 && nowMs - this.mouthWindow[0].t > 2600) {
         this.mouthWindow.shift();
@@ -646,10 +664,11 @@ export class RhythmSignalProcessor {
     }
 
     const isSpeakingNow =
-      (this.lastAudioVisualSpeakMs > 0 &&
+      !speakingSuppressed &&
+      ((this.lastAudioVisualSpeakMs > 0 &&
         nowMs - this.lastAudioVisualSpeakMs <= AUDIO_VISUAL_SPEAK_GRACE_MS) ||
-      (this.lastVisualSpeakMs > 0 &&
-        nowMs - this.lastVisualSpeakMs <= VISUAL_ONLY_SPEAK_GRACE_MS);
+        (this.lastVisualSpeakMs > 0 &&
+          nowMs - this.lastVisualSpeakMs <= VISUAL_ONLY_SPEAK_GRACE_MS));
 
     const conversationalPause = context.inMeetingMode || isSpeakingNow;
 

@@ -890,6 +890,7 @@ export function App() {
             onTogglePosture={session.setPostureManual}
             onConfirmPosturePrompt={session.confirmPosturePrompt}
             onToggleMeetingMode={session.toggleMeetingMode}
+            onClearSpeaking={session.clearSpeaking}
             onCompleteCalmingReset={handleCompleteCalmingReset}
             onStart={() => {
               pip.primeCanvasVideo();
@@ -981,6 +982,7 @@ export function App() {
             rhythm={session.rhythm}
             inMeetingMode={session.inMeetingMode}
             voiceCalibrating={session.voiceCalibrating}
+            voiceCalProgress={session.voiceCalProgress}
             cameraAngleWarning={session.cameraAngleWarning}
             morningStory={morningStory}
             onDismissMorningStory={handleDismissMorningStory}
@@ -990,6 +992,7 @@ export function App() {
             onOpenVoiceSettings={handleOpenVoiceSettings}
             onUpdateSettings={updateSettings}
             onToggleMeetingMode={session.toggleMeetingMode}
+            onClearSpeaking={session.clearSpeaking}
             onSetPostureManual={session.setPostureManual}
             onConfirmPosturePrompt={session.confirmPosturePrompt}
             onAcknowledgeCameraAngle={session.acknowledgeCameraAngle}
@@ -1059,6 +1062,7 @@ export function App() {
             legacyStill={legacyStill}
             sessionRunning={session.status === 'running'}
             voiceCalibrating={session.voiceCalibrating}
+            voiceCalProgress={session.voiceCalProgress}
             videoRef={session.videoRef}
             frameGeometry={session.frameGeometry}
             dwellSec={session.dwellSec}

@@ -275,6 +275,8 @@ export const EMPTY_CALIBRATION: PostureCalibration = {
   sitSecondaryMassY: null,
   standSecondaryMassY: null,
   confirmedSwitches: 0,
+  acceptedYawSymmetry: null,
+  acceptedTopDownStrength: null,
   updatedAt: null,
 };
 

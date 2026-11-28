@@ -54,6 +54,7 @@ interface PipWindowContentProps {
   onTogglePosture: (next: PostureState) => void;
   onConfirmPosturePrompt: (accepted: boolean) => void;
   onToggleMeetingMode: () => void;
+  onClearSpeaking: () => void;
   onCompleteCalmingReset: (id: CalmingTechniqueId) => void;
   onStart: () => void;
   onStop: () => void;
@@ -101,6 +102,7 @@ export function PipWindowContent({
   onTogglePosture,
   onConfirmPosturePrompt,
   onToggleMeetingMode,
+  onClearSpeaking,
   onCompleteCalmingReset,
   onStart,
   onStop,
@@ -123,7 +125,7 @@ export function PipWindowContent({
   const isRunning = status === 'running';
   const camBroken = isRunning && (cameraState !== 'live' || cameraStalled);
   const camActivelyDetecting = isRunning && !camBroken && detectCount > 0;
-  const isGlowing = !camBroken && !cameraAngleWarning && (stage2AlertOpen || stage1Glow || handInZone);
+  const isGlowing = !camBroken && (stage2AlertOpen || stage1Glow || handInZone);
   const dwellPct = Math.min(100, Math.round((dwellSec / Math.max(0.5, stage2DwellSec)) * 100));
   const cleanName = userName.trim();
 
@@ -154,31 +156,28 @@ export function PipWindowContent({
 
   const statusChip = !isRunning
     ? 'Idle'
-    : cameraAngleWarning
-      ? 'Check angle'
-      : faceState === 'away'
-        ? 'Away'
-        : inMeetingMode
-          ? 'Meeting'
-          : isSpeaking
-            ? 'Speaking'
-            : restlessnessLevel === 'restless'
-              ? 'Restless'
-              : restlessnessLevel === 'stirring'
-                ? 'Stirring'
-                : 'Settled';
+    : faceState === 'away'
+      ? 'Away'
+      : inMeetingMode
+        ? 'Meeting'
+        : isSpeaking
+          ? 'Speaking'
+          : restlessnessLevel === 'restless'
+            ? 'Restless'
+            : restlessnessLevel === 'stirring'
+              ? 'Stirring'
+              : 'Settled';
 
   const dwellRatio = Math.min(1, Math.max(0, dwellSec / Math.max(0.5, stage2DwellSec)));
-  const pipGlowLevel =
-    camBroken || cameraAngleWarning
-      ? 0
-      : stage2AlertOpen
-        ? 1
-        : stage1Glow
-          ? Math.max(0.48, Math.min(0.88, dwellRatio))
-          : handInZone
-            ? Math.max(0.14, dwellRatio * 0.72)
-            : 0;
+  const pipGlowLevel = camBroken
+    ? 0
+    : stage2AlertOpen
+      ? 1
+      : stage1Glow
+        ? Math.max(0.48, Math.min(0.88, dwellRatio))
+        : handInZone
+          ? Math.max(0.14, dwellRatio * 0.72)
+          : 0;
 
   const pipGlowStyle: React.CSSProperties | undefined =
     pipGlowLevel > 0.02
@@ -279,18 +278,18 @@ export function PipWindowContent({
         </div>
       ) : (
         <div className="pip-calm-body">
-          {/* Proactive Camera Angle Warning inside PiP (auto-clears when adjusted) */}
+          {/* Proactive Camera Angle Tip inside PiP (tracking & alerts stay active) */}
           {isRunning && cameraAngleWarning && (
             <div className="pip-angle-bar" role="status">
               <span className="pip-angle-text">
-                Angle looks off — alerts paused
+                Angle looks off · still watching
               </span>
               <button
                 type="button"
                 className="btn btn-subtle btn-xs"
                 onClick={onAcknowledgeCameraAngle}
               >
-                Watch anyway
+                Camera is fine
               </button>
             </div>
           )}
@@ -485,7 +484,7 @@ export function PipWindowContent({
             </div>
           )}
 
-          {/* 4. Three Quick Action Buttons on ONE Single Row: Pause · Meeting · 60s Sigh */}
+          {/* 4. Three Quick Action Buttons on ONE Single Row: Pause · Meeting/Speaking · 60s Sigh */}
           <div className="pip-controls pip-controls--triple">
             {isRunning ? (
               <button type="button" className="btn btn-subtle btn-xs pip-action-btn" onClick={onStop}>
@@ -496,14 +495,25 @@ export function PipWindowContent({
                 Begin
               </button>
             )}
-            <button
-              type="button"
-              className={`btn btn-xs pip-action-btn ${inMeetingMode ? 'btn-subtle' : 'btn-ghost'}`}
-              aria-pressed={inMeetingMode}
-              onClick={onToggleMeetingMode}
-            >
-              {inMeetingMode ? 'In meeting' : isSpeaking ? 'Speaking' : 'Meeting'}
-            </button>
+            {isRunning && isSpeaking && !inMeetingMode ? (
+              <button
+                type="button"
+                className="btn btn-xs pip-action-btn btn-subtle"
+                title="Auto-detected speaking — click if you're not talking"
+                onClick={onClearSpeaking}
+              >
+                Speaking ✕
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`btn btn-xs pip-action-btn ${inMeetingMode ? 'btn-subtle' : 'btn-ghost'}`}
+                aria-pressed={inMeetingMode}
+                onClick={onToggleMeetingMode}
+              >
+                {inMeetingMode ? 'In meeting' : 'Meeting'}
+              </button>
+            )}
             <button
               type="button"
               className={`btn btn-xs pip-action-btn ${
