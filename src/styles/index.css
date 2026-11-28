@@ -1461,16 +1461,24 @@ input[type='range'] {
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   z-index: 50;
+  width: max-content;
+  max-width: calc(100vw - 32px);
   background: var(--ink);
   color: var(--bg);
-  padding: 10px 18px;
-  border-radius: var(--radius-pill);
-  font-size: 13.5px;
+  padding: 9px 15px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.35;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
+  gap: 8px 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
-  max-width: calc(100vw - 32px);
+}
+
+.whisper-toast > span:first-child {
+  white-space: nowrap;
 }
 
 .whisper-undo {
@@ -4111,7 +4119,9 @@ input[type='range'] {
 /* Whisper toast quick-tag chips (Eye scratch / Drink / Ear) & dismiss */
 .whisper-tag-group {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 6px;
 }
 
