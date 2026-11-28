@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { playSingingBowl, unlockAudio } from '../lib/audio';
 import { DualCameraMonitor } from '../lib/dualCameraPosture';
 import { RhythmSignalProcessor } from '../lib/rhythmSignals';
-import { appendTelemetry } from '../lib/storage';
+import { appendPoseSample, appendTelemetry, updatePoseSampleOutcome } from '../lib/storage';
 import { checkModelsCached, LocalVisionEngine } from '../lib/vision';
 import { fireVisualDesktopBanner } from '../lib/visualAlerts';
 import { LocalVoiceMonitor } from '../lib/voiceMonitor';
@@ -14,10 +14,12 @@ import type {
   FaceTouchRegion,
   FalseAlarmReason,
   FrameGeometry,
+  HandPoseSnapshot,
   LiveRhythmState,
   PostureCalibration,
   PostureState,
   ReliefMoveKind,
+  SampleOutcome,
   Stage1AutoCatch,
   StillSettings,
   VisionDiagnostics,
@@ -195,6 +197,7 @@ export function useStillSession({
   const wasSpeakingRef = useRef(false);
   const lastBgAudioLogMsRef = useRef(0);
   const lastPosturePromptCreatedAtRef = useRef(0);
+  const lastZonePoseRef = useRef<HandPoseSnapshot | null>(null);
 
   const triggerWelcomeBackToast = useCallback((prompt: WelcomeBackPrompt) => {
     if (welcomeBackTimerRef.current) {
@@ -639,6 +642,12 @@ export function useStillSession({
         const nextDwell = Math.min(s.stage2DwellSec + 1.5, dwellRef.current + dt);
         dwellRef.current = nextDwell;
         setDwellSec(nextDwell);
+        if (frame.poseSnapshot) {
+          lastZonePoseRef.current = {
+            ...frame.poseSnapshot,
+            dwellSec: Number(nextDwell.toFixed(2)),
+          };
+        }
 
         if (stage1FiredRef.current) {
           stage1ClearedAtRef.current = null;
@@ -725,6 +734,14 @@ export function useStillSession({
             setStage1AutoCatch(null);
             setEdgeGlowActive(false);
             const eventId = onStage1AutoCaughtRef.current();
+            if (lastZonePoseRef.current) {
+              appendPoseSample({
+                eventId,
+                outcome: 'real-autocatch',
+                cameraLabel: streamRef.current?.getVideoTracks()[0]?.label || '',
+                pose: lastZonePoseRef.current,
+              });
+            }
             appendTelemetry('auto-catch', 'Stage 1 auto-caught redirect');
             showWhisper('Hand lowered · urge redirected', eventId, 6500);
           } else {
@@ -1504,6 +1521,34 @@ export function useStillSession({
     [diagnostics.cameraLabel]
   );
 
+  const recordPoseSample = useCallback(
+    (outcome: SampleOutcome, eventId?: string) => {
+      const snap =
+        lastZonePoseRef.current ??
+        (lastFrameRef.current?.poseSnapshot
+          ? { ...lastFrameRef.current.poseSnapshot, dwellSec: Number(dwellRef.current.toFixed(2)) }
+          : null);
+      if (!snap) return;
+      appendPoseSample({
+        eventId,
+        outcome,
+        cameraLabel: diagnostics.cameraLabel || '',
+        pose: snap,
+      });
+    },
+    [diagnostics.cameraLabel]
+  );
+
+  const relabelPoseSample = useCallback(
+    (eventId: string | undefined, nextOutcome: SampleOutcome) => {
+      const updated = updatePoseSampleOutcome(eventId, nextOutcome);
+      if (!updated) {
+        recordPoseSample(nextOutcome, eventId);
+      }
+    },
+    [recordPoseSample]
+  );
+
   const cancelStage1FalseAlarm = useCallback(
     (falseAlarmEventId?: string) => {
       resetDwellState();
@@ -1553,6 +1598,8 @@ export function useStillSession({
     triggerTestCue,
     acknowledgeCameraAngle,
     logFalseAlarmTelemetry,
+    recordPoseSample,
+    relabelPoseSample,
     cancelStage1FalseAlarm,
     dismissWelcomeBack,
     dismissWhisper,

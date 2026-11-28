@@ -410,6 +410,12 @@ export function App() {
         ear: 'Ear touch',
         other: 'Other',
       };
+      const outcomeMap = {
+        'eye-scratch': 'fp-eye-scratch',
+        drinking: 'fp-drinking',
+        ear: 'fp-ear',
+        other: 'fp-other',
+      } as const;
       const tagLabel = labelMap[reason];
       setEvents((prev) => {
         const idx = eventId
@@ -421,14 +427,16 @@ export function App() {
         saveEvents(next);
         return next;
       });
+      session.relabelPoseSample(eventId, outcomeMap[reason]);
       session.logFalseAlarmTelemetry('quick-tag', reason);
-      session.showWhisper(`Tagged as ${tagLabel} · saved to debug log`, undefined, 3200);
+      session.showWhisper(`Tagged as ${tagLabel} · saved for future tuning`, undefined, 3200);
     },
     [session]
   );
 
   const handleCancelStage1FalseAlarm = useCallback(() => {
     const evId = createId();
+    session.recordPoseSample('fp-unlabeled', evId);
     session.logFalseAlarmTelemetry('stage1');
     session.cancelStage1FalseAlarm(evId);
     recordFalseAlarmMoment();
@@ -465,9 +473,10 @@ export function App() {
         kind: 'false-alarm',
       });
       recordFalseAlarmMoment();
+      session.relabelPoseSample(eventId, 'fp-unlabeled');
       session.logFalseAlarmTelemetry('undo-autocatch');
       session.dismissWhisper();
-      session.showWhisper('Undone · false alarm noted', undefined, 6800, faId);
+      session.showWhisper('Undone · false alarm noted', undefined, 6800, eventId);
     },
     [appendEvent, recordFalseAlarmMoment, session, updateTodaySummary]
   );
@@ -479,6 +488,8 @@ export function App() {
       session.resetDwellState();
       if (!wasPreview) {
         const dateKey = getLocalDateKey();
+        const evId = createId();
+        session.recordPoseSample('real-stage2', evId);
         updateTodaySummary((cur) => ({
           ...cur,
           urgesRedirected: cur.urgesRedirected + 1,
@@ -488,7 +499,7 @@ export function App() {
           browUrges: b.browUrges + 1,
         }));
         appendEvent({
-          id: createId(),
+          id: evId,
           timestamp: Date.now(),
           dateKey,
           kind: 'redirect-stage2',
@@ -509,6 +520,8 @@ export function App() {
       session.resetDwellState();
       if (!wasPreview) {
         const dateKey = getLocalDateKey();
+        const evId = createId();
+        session.recordPoseSample('real-grace', evId);
         updateTodaySummary((cur) => ({
           ...cur,
           graceRecoveries: cur.graceRecoveries + 1,
@@ -518,7 +531,7 @@ export function App() {
           browUrges: b.browUrges + 1,
         }));
         appendEvent({
-          id: createId(),
+          id: evId,
           timestamp: Date.now(),
           dateKey,
           kind: 'grace',
@@ -539,6 +552,7 @@ export function App() {
     if (!wasPreview) {
       const dateKey = getLocalDateKey();
       const faId = createId();
+      session.recordPoseSample('fp-unlabeled', faId);
       updateTodaySummary((cur) => ({
         ...cur,
         falseAlarms: cur.falseAlarms + 1,
@@ -1111,6 +1125,15 @@ export function App() {
                 }
               >
                 Ear
+              </button>
+              <button
+                type="button"
+                className="whisper-tag-btn"
+                onClick={() =>
+                  handleTagFalseAlarm('other', session.whisper!.falseAlarmEventId)
+                }
+              >
+                Other
               </button>
             </span>
           )}

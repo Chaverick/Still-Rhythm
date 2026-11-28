@@ -228,6 +228,7 @@ export interface FrameGeometry {
   handInZone: boolean;
   filteredReason: 'ear' | 'drinking' | 'foreground' | 'below-brow' | null;
   closestRatio: number | null;
+  poseSnapshot: Omit<HandPoseSnapshot, 'dwellSec'> | null;
   upperBody: UpperBodySnapshot;
 }
 
@@ -316,6 +317,48 @@ export type TelemetryEventKind =
   | 'posture-prompt'
   | 'posture-confirm'
   | 'session-start';
+
+export interface HandPoseSnapshot {
+  /** Closest distance to active brow halo divided by halo radius (smaller = closer) */
+  closestRatio: number;
+  /** Vertical offset of closest fingertip relative to eye center, normalized by eyeSpan (+ = below eye, - = above brow) */
+  relYToEye: number;
+  /** Horizontal distance from outer brow corner toward ear, normalized by eyeSpan (>0 = outside brow) */
+  lateralOutside: number;
+  /** Thumb-to-index tip distance divided by palm size (smaller = tighter pinch) */
+  pinchRatio: number;
+  /** Hand size relative to eyeSpan (larger = closer to camera / foreground) */
+  handToEyeScale: number;
+  /** True if primary plucking fingertips (thumb/index/middle) triggered rather than back/ring/pinky */
+  primaryTipHit: boolean;
+  /** Steep top-down camera angle strength (0..1) */
+  topDownStrength: number;
+  /** Side-angle camera flag */
+  sideAngle: boolean;
+  /** Dwell duration in seconds at moment of event */
+  dwellSec: number;
+  /** Which zone was closest */
+  zoneId: DetectionZoneId | null;
+}
+
+export type SampleOutcome =
+  | 'real-autocatch'
+  | 'real-stage2'
+  | 'real-grace'
+  | 'fp-eye-scratch'
+  | 'fp-drinking'
+  | 'fp-ear'
+  | 'fp-other'
+  | 'fp-unlabeled';
+
+export interface LabeledPoseSample {
+  id: string;
+  eventId?: string;
+  t: number;
+  outcome: SampleOutcome;
+  cameraLabel: string;
+  pose: HandPoseSnapshot;
+}
 
 export interface TelemetryEntry {
   id: string;

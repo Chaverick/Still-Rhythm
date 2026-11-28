@@ -5,9 +5,11 @@ import type {
   DaySummary,
   FaceTouchCounts,
   FiveMinBucket,
+  LabeledPoseSample,
   NoteEntry,
   PostureCalibration,
   PostureState,
+  SampleOutcome,
   StillSettings,
   TelemetryEntry,
   TelemetryEventKind,
@@ -23,6 +25,7 @@ const KEYS = {
   calibration: 'stillrhythm:calibration:v1',
   postureStretch: 'stillrhythm:posture-stretch:v1',
   telemetry: 'stillrhythm:telemetry:v1',
+  poseSamples: 'stillrhythm:pose-samples:v1',
   dismissedSummary: 'stillrhythm:dismissed-summary:v1',
   migratedFromStill: 'stillrhythm:migrated-from-still:v1',
   theme: 'stillrhythm:theme',
@@ -830,5 +833,103 @@ export function formatTelemetryLog(entries: TelemetryEntry[], limit = 60): strin
       : '';
     lines.push(`[${time}] ${e.kind}: ${e.detail}${metaStr}`);
   }
+
+  const samples = loadPoseSamples();
+  if (samples.length > 0) {
+    const stats = getPoseSampleStats(samples);
+    lines.push('');
+    lines.push(
+      `Collected Pose Samples (${stats.total} total: ${stats.realCount} real catches, ${stats.labeledFpCount} labeled FPs, ${stats.unlabeledFpCount} unlabeled FPs)`
+    );
+    lines.push('------------------------------------------------------------------------');
+    for (const s of samples.slice(0, 30)) {
+      const time = new Date(s.t).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const p = s.pose;
+      lines.push(
+        `[${time}] ${s.outcome} | ratio=${p.closestRatio} relY=${p.relYToEye} lat=${p.lateralOutside} pinch=${p.pinchRatio} scale=${p.handToEyeScale} primary=${p.primaryTipHit} td=${p.topDownStrength} side=${p.sideAngle} dwell=${p.dwellSec}s zone=${p.zoneId ?? 'none'}`
+      );
+    }
+  }
   return lines.join('\n');
+}
+
+// ============================================================================
+// Local Labeled Hand-Pose Samples (Data collection only — zero behavior change)
+// Capped at 250 compact numeric snapshots for future recall-safe local tuning.
+// ============================================================================
+const POSE_SAMPLES_MAX = 250;
+
+export function loadPoseSamples(): LabeledPoseSample[] {
+  const list = readJson<LabeledPoseSample[]>(KEYS.poseSamples, []);
+  return Array.isArray(list) ? list : [];
+}
+
+export function appendPoseSample(
+  sample: Omit<LabeledPoseSample, 'id' | 't'>
+): LabeledPoseSample {
+  const entry: LabeledPoseSample = {
+    id: createId(),
+    t: Date.now(),
+    ...sample,
+  };
+  const existing = loadPoseSamples();
+  const next = [entry, ...existing].slice(0, POSE_SAMPLES_MAX);
+  writeJson(KEYS.poseSamples, next);
+  return entry;
+}
+
+export function updatePoseSampleOutcome(
+  eventId: string | undefined,
+  nextOutcome: SampleOutcome
+): boolean {
+  const existing = loadPoseSamples();
+  const idx = eventId
+    ? existing.findIndex((s) => s.eventId === eventId)
+    : existing.findIndex((s) => s.outcome.startsWith('fp-'));
+  if (idx < 0) return false;
+  const updated = [...existing];
+  updated[idx] = { ...updated[idx], outcome: nextOutcome };
+  writeJson(KEYS.poseSamples, updated);
+  return true;
+}
+
+export function clearPoseSamples(): void {
+  try {
+    localStorage.removeItem(KEYS.poseSamples);
+  } catch {
+    // ignore
+  }
+}
+
+export function getPoseSampleStats(samples: LabeledPoseSample[] = loadPoseSamples()): {
+  total: number;
+  realCount: number;
+  labeledFpCount: number;
+  unlabeledFpCount: number;
+  eyeScratchCount: number;
+} {
+  let realCount = 0;
+  let labeledFpCount = 0;
+  let unlabeledFpCount = 0;
+  let eyeScratchCount = 0;
+  for (const s of samples) {
+    if (s.outcome.startsWith('real-')) realCount += 1;
+    else if (s.outcome === 'fp-unlabeled') unlabeledFpCount += 1;
+    else {
+      labeledFpCount += 1;
+      if (s.outcome === 'fp-eye-scratch') eyeScratchCount += 1;
+    }
+  }
+  return {
+    total: samples.length,
+    realCount,
+    labeledFpCount,
+    unlabeledFpCount,
+    eyeScratchCount,
+  };
 }

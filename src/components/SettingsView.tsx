@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react';
 import {
+  clearPoseSamples,
   clearTelemetry,
   formatShortDuration,
   formatTelemetryLog,
+  getPoseSampleStats,
   loadTelemetry,
   type LegacyStillSummary,
 } from '../lib/storage';
@@ -679,15 +681,19 @@ export function SettingsView({
 
           <details className="streamline-drawer">
             <summary className="streamline-drawer-summary">
-              <span>Light diagnostic log (for tuning)</span>
+              <span>Light diagnostic &amp; sample log</span>
               <span className="streamline-drawer-meta tabular">
-                {loadTelemetry().length} local events
+                {(() => {
+                  const st = getPoseSampleStats();
+                  return `${st.realCount} catches · ${st.labeledFpCount} labeled FPs`;
+                })()}
               </span>
             </summary>
             <div className="streamline-drawer-body">
               <p className="toggle-desc" style={{ marginBottom: 10 }}>
-                Stores the last 160 numeric events locally (false-alarm tags, eye scratches, camera
-                angles, speaking &amp; posture switches). Zero video or audio is ever recorded.
+                Quietly collects compact numeric hand-pose snapshots on catches &amp; tagged false
+                alarms (zero video/audio) so we can review real numbers before turning on any
+                self-improving tuning later.
               </p>
               <div className="welcome-actions" style={{ marginBottom: 10 }}>
                 <button
@@ -699,13 +705,14 @@ export function SettingsView({
                     navigator.clipboard?.writeText(text).catch(() => {});
                   }}
                 >
-                  Copy debug log
+                  Copy debug &amp; sample log
                 </button>
                 <button
                   type="button"
                   className="text-link-btn text-link-btn--muted"
                   onClick={() => {
                     clearTelemetry();
+                    clearPoseSamples();
                     setConfirmClear((c) => !c);
                     window.setTimeout(() => setConfirmClear(false), 0);
                   }}

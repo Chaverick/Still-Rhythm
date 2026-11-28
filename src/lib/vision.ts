@@ -716,6 +716,7 @@ export class LocalVisionEngine {
     let handInZone = false;
     let filteredReason: 'ear' | 'drinking' | 'foreground' | 'below-brow' | null = null;
     let closestRatio: number | null = null;
+    let poseSnapshot: FrameGeometry['poseSnapshot'] = null;
     let handNearFaceRegion: FaceTouchRegion | 'neck' | null = null;
 
     const guardOn = options.smartFalseAlarmGuard;
@@ -770,6 +771,26 @@ export class LocalVisionEngine {
             const ratio = dAsym / zone.radius;
             if (closestRatio === null || ratio < closestRatio) {
               closestRatio = ratio;
+              const eyeSpanSafe = Math.max(0.05, activeFace.eyeSpan);
+              const eyeCenterY =
+                zone.id === 'left-brow'
+                  ? activeFace.leftEyeCenterY
+                  : zone.id === 'right-brow'
+                    ? activeFace.rightEyeCenterY
+                    : (activeFace.leftEyeCenterY + activeFace.rightEyeCenterY) * 0.5;
+              const lateralRight = (activeFace.rightOuterBrow.x - pt.x) / eyeSpanSafe;
+              const lateralLeft = (pt.x - activeFace.leftOuterBrow.x) / eyeSpanSafe;
+              poseSnapshot = {
+                closestRatio: Number(ratio.toFixed(3)),
+                relYToEye: Number(((pt.y - eyeCenterY) / eyeSpanSafe).toFixed(3)),
+                lateralOutside: Number(Math.max(lateralRight, lateralLeft).toFixed(3)),
+                pinchRatio: Number(pinchRatio.toFixed(3)),
+                handToEyeScale: Number((handSize / eyeSpanSafe).toFixed(3)),
+                primaryTipHit: isPrimaryTip,
+                topDownStrength: Number(tdStrength.toFixed(3)),
+                sideAngle: Boolean(activeFace.sideAngle),
+                zoneId: zone.id,
+              };
             }
             if (handClosestRatio === null || ratio < handClosestRatio) {
               handClosestRatio = ratio;
@@ -1022,6 +1043,7 @@ export class LocalVisionEngine {
       handInZone,
       filteredReason,
       closestRatio,
+      poseSnapshot,
       upperBody,
     };
   }
