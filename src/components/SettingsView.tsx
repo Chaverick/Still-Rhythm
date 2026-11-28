@@ -1,5 +1,11 @@
 import { useRef, useState } from 'react';
-import { formatShortDuration, type LegacyStillSummary } from '../lib/storage';
+import {
+  clearTelemetry,
+  formatShortDuration,
+  formatTelemetryLog,
+  loadTelemetry,
+  type LegacyStillSummary,
+} from '../lib/storage';
 import type {
   CameraDeviceOption,
   FrameGeometry,
@@ -670,6 +676,48 @@ export function SettingsView({
               </div>
             </div>
           </section>
+
+          <details className="streamline-drawer">
+            <summary className="streamline-drawer-summary">
+              <span>Light diagnostic log (for tuning)</span>
+              <span className="streamline-drawer-meta tabular">
+                {loadTelemetry().length} local events
+              </span>
+            </summary>
+            <div className="streamline-drawer-body">
+              <p className="toggle-desc" style={{ marginBottom: 10 }}>
+                Stores the last 160 numeric events locally (false-alarm tags, eye scratches, camera
+                angles, speaking &amp; posture switches). Zero video or audio is ever recorded.
+              </p>
+              <div className="welcome-actions" style={{ marginBottom: 10 }}>
+                <button
+                  type="button"
+                  id="btn-copy-debug-log"
+                  className="btn btn-subtle btn-xs"
+                  onClick={() => {
+                    const text = formatTelemetryLog(loadTelemetry(), 60);
+                    navigator.clipboard?.writeText(text).catch(() => {});
+                  }}
+                >
+                  Copy debug log
+                </button>
+                <button
+                  type="button"
+                  className="text-link-btn text-link-btn--muted"
+                  onClick={() => {
+                    clearTelemetry();
+                    setConfirmClear((c) => !c);
+                    window.setTimeout(() => setConfirmClear(false), 0);
+                  }}
+                >
+                  Clear log
+                </button>
+              </div>
+              <pre className="telemetry-preview">
+                {formatTelemetryLog(loadTelemetry(), 10)}
+              </pre>
+            </div>
+          </details>
         </>
       )}
     </div>

@@ -998,6 +998,11 @@ export class LocalVisionEngine {
       bgHash: this.sampleBackgroundHash(video, nowMs),
     };
 
+    const headPos = activeFace?.headCenter ?? null;
+    const faceEdgeClipped = Boolean(
+      headPos && (headPos.x < 0.16 || headPos.x > 0.84 || headPos.y < 0.14 || headPos.y > 0.86)
+    );
+
     return {
       videoWidth: video.videoWidth,
       videoHeight: video.videoHeight,
@@ -1005,6 +1010,8 @@ export class LocalVisionEngine {
       usingOcclusionCache,
       sideAngle: Boolean(activeFace?.sideAngle),
       topDownAngle: Boolean(activeFace?.topDownAngle),
+      topDownStrength: activeFace?.topDownStrength ?? 0,
+      faceEdgeClipped,
       faceOval: activeFace?.faceOval ?? [],
       leftEye: activeFace?.leftEye ?? [],
       rightEye: activeFace?.rightEye ?? [],

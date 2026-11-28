@@ -47,9 +47,9 @@ const FACE_TOUCH_COOLDOWN_MS = 3200;
 const NECK_RUB_MIN_MS = 650;
 const RELIEF_COOLDOWN_MS = 7500;
 
-// Talking grace windows (hold calm restlessness briefly after a sentence ends)
-const AUDIO_VISUAL_SPEAK_GRACE_MS = 15_000;
-const VISUAL_ONLY_SPEAK_GRACE_MS = 11_000;
+// Talking grace windows (reset briskly after a sentence ends)
+const AUDIO_VISUAL_SPEAK_GRACE_MS = 6_500;
+const VISUAL_ONLY_SPEAK_GRACE_MS = 5_500;
 
 // Dual-camera sit/stand confirmation guardrails ("don't do it too much")
 const POSTURE_CANDIDATE_CONFIRM_MS = 5200; // must hold new posture steadily for ~5.2s
@@ -72,7 +72,7 @@ function hashDistance(a: number[] | null | undefined, b: number[] | null | undef
  * Transforms 4-FPS FrameGeometry + optional local VoiceSample + optional SecondaryCameraSample
  * into smooth, human-friendly live signals:
  * - Restlessness score (0-100) that automatically pauses during talking/meetings & ignores smiles/open gestures
- * - Audio-Visual Talking Detection + Voice Comfort (dB) state
+ * - Strict Audio-Visual Lip-Sync Talking Detection + Voice Comfort (dB) state
  * - Dual-Camera Sit vs. Stand Detection with rare, auto-learning confirmation prompts
  * - Silent neck/shoulder comfort-adjustment & face-touch logging (zero alerts)
  */
@@ -102,6 +102,8 @@ export class RhythmSignalProcessor {
   private mouthWindow: Array<{ t: number; open: number }> = [];
   private lastAudioVisualSpeakMs = 0;
   private lastVisualSpeakMs = 0;
+  private lastLipTransitions = 0;
+  private backgroundAudioIgnored = false;
   private lastVoiceSample: VoiceSample = {
     micState: 'off',
     rawDb: 0,
@@ -475,6 +477,8 @@ export class RhythmSignalProcessor {
         nowWallMs < this.recentFaceTouchUntilMs ? this.recentFaceTouchRegion : null,
       isSpeaking,
       speakingSource,
+      lipTransitions: this.lastLipTransitions,
+      backgroundAudioIgnored: this.backgroundAudioIgnored,
       voiceDb: this.lastVoiceSample.smoothedDb,
       voiceStatus,
       micState: this.lastVoiceSample.micState as MicState,
@@ -586,36 +590,56 @@ export class RhythmSignalProcessor {
       this.neutralSamples += 1;
     }
 
-    // 2. Audio-Visual & Visual Talking Detection (zero recording, 100% local)
+    // 2. Strict Audio-Visual Lip-Sync Talking Detection (ignores background audio when lips are still)
+    this.backgroundAudioIgnored = false;
     if (!frame.usingOcclusionCache) {
       this.mouthWindow.push({ t: nowMs, open: ub.mouthOpenRatio });
-      while (this.mouthWindow.length > 0 && nowMs - this.mouthWindow[0].t > 5500) {
+      while (this.mouthWindow.length > 0 && nowMs - this.mouthWindow[0].t > 2600) {
         this.mouthWindow.shift();
       }
 
-      // Count repeated mouth open/close articulation deltas over rolling 5.5s window
+      // Measure real alternating mouth open & close articulation in the tight 2.6s window
       let articulationSum = 0;
       let transitions = 0;
-      for (let i = 1; i < this.mouthWindow.length; i++) {
-        const delta = Math.abs(this.mouthWindow[i].open - this.mouthWindow[i - 1].open);
-        if (delta >= 0.032) {
-          articulationSum += delta;
-          transitions += 1;
+      let openedCount = 0;
+      let closedCount = 0;
+      let minOpen = 1;
+      let maxOpen = 0;
+      for (let i = 0; i < this.mouthWindow.length; i++) {
+        const cur = this.mouthWindow[i].open;
+        if (cur < minOpen) minOpen = cur;
+        if (cur > maxOpen) maxOpen = cur;
+        if (i > 0) {
+          const signedDelta = cur - this.mouthWindow[i - 1].open;
+          const absDelta = Math.abs(signedDelta);
+          if (absDelta >= 0.044) {
+            articulationSum += absDelta;
+            transitions += 1;
+            if (signedDelta > 0) openedCount += 1;
+            else closedCount += 1;
+          }
         }
       }
-
-      const lipMoving = transitions >= 2 || articulationSum >= 0.12 || ub.mouthOpenRatio >= 0.16;
+      this.lastLipTransitions = transitions;
+      const mouthRange = maxOpen - minOpen;
+      // Must genuinely oscillate (both opening AND closing) — never a static slightly-parted mouth!
+      const oscillatingLips =
+        transitions >= 3 &&
+        openedCount >= 1 &&
+        closedCount >= 1 &&
+        articulationSum >= 0.16 &&
+        mouthRange >= 0.065;
 
       if (context.voice.micState === 'active') {
-        // Gold-standard Audio-Visual Voice Activity: mic speech band + lip movement!
-        if (context.voice.voiceBandActive && lipMoving) {
+        if (context.voice.voiceBandActive && oscillatingLips) {
           this.lastAudioVisualSpeakMs = nowMs;
-        } else if (context.voice.voiceBandActive && context.voice.smoothedDb >= settings.voiceComfortMinDb + 4 && ub.mouthOpenRatio >= 0.08) {
-          this.lastAudioVisualSpeakMs = nowMs;
+        } else if (context.voice.voiceBandActive && transitions < 2) {
+          // Background audio/video/podcast playing while user's lips stay still -> ignore!
+          this.backgroundAudioIgnored = true;
         }
       } else {
-        // Camera-only graceful fallback: require clear repeated mouth oscillation (not a single yawn/sip)
-        if (transitions >= 4 && articulationSum >= 0.24) {
+        // Camera-only graceful fallback: require clear sustained lip oscillation
+        if (transitions >= 4 && openedCount >= 2 && closedCount >= 2 && articulationSum >= 0.24) {
           this.lastVisualSpeakMs = nowMs;
         }
       }

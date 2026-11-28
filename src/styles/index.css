@@ -4032,3 +4032,133 @@ input[type='range'] {
     align-items: flex-start;
   }
 }
+
+/* ==========================================================================
+   7-Day Summary, Compact PiP, Camera Angle Check, Quick-Tag Toast & Debug Log
+   ========================================================================== */
+
+.seven-day-card {
+  gap: 14px;
+}
+
+.seven-day-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.seven-day-line {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-secondary);
+}
+
+.story-card--flat {
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+}
+
+/* Compact PiP mode + inline angle/tag strip */
+.pip-top-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.pip-shell--compact {
+  gap: 8px;
+}
+
+.pip-compact-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  padding: 2px 2px 0;
+}
+
+.pip-compact-stats strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.pip-compact-dot {
+  color: var(--ink-muted);
+}
+
+.pip-angle-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  font-size: 11.5px;
+}
+
+.pip-angle-text {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* Whisper toast quick-tag chips (Eye scratch / Drink / Ear) & dismiss */
+.whisper-tag-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.whisper-tag-btn {
+  border: 1px solid color-mix(in srgb, var(--bg) 28%, transparent);
+  background: color-mix(in srgb, var(--bg) 12%, transparent);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 140ms ease;
+}
+
+.whisper-tag-btn:hover {
+  background: color-mix(in srgb, var(--bg) 24%, transparent);
+}
+
+.whisper-dismiss {
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--bg) 65%, transparent);
+  font-size: 12px;
+  padding: 0 2px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.whisper-dismiss:hover {
+  color: var(--bg);
+}
+
+/* Local diagnostic debug log preview in Settings -> Data & Theme */
+.telemetry-preview {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}

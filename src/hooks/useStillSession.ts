@@ -2,14 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { playSingingBowl, unlockAudio } from '../lib/audio';
 import { DualCameraMonitor } from '../lib/dualCameraPosture';
 import { RhythmSignalProcessor } from '../lib/rhythmSignals';
+import { appendTelemetry } from '../lib/storage';
 import { checkModelsCached, LocalVisionEngine } from '../lib/vision';
 import { fireVisualDesktopBanner } from '../lib/visualAlerts';
 import { LocalVoiceMonitor } from '../lib/voiceMonitor';
 import { WakeLockController } from '../lib/wakeLock';
 import type {
+  CameraAngleWarning,
   CameraDeviceOption,
   EngineStatus,
   FaceTouchRegion,
+  FalseAlarmReason,
   FrameGeometry,
   LiveRhythmState,
   PostureCalibration,
@@ -27,11 +30,15 @@ const CAMERA_STALL_MS = 2600;
 const STAGE1_AUTOCATCH_MS = 5000;
 const AWAY_PAUSE_CALM_MS = 30_000;
 const WELCOME_BACK_THRESHOLD_MS = 5 * 60 * 1000;
+const WELCOME_BACK_TOAST_MS = 20_000;
+const BAD_ANGLE_HOLD_MS = 6000;
+const GOOD_ANGLE_CLEAR_MS = 2200;
 
 export interface WhisperToast {
   id: number;
   message: string;
   undoEventId?: string;
+  falseAlarmEventId?: string;
 }
 
 export interface RhythmTickSample {
@@ -125,6 +132,7 @@ export function useStillSession({
   const [dwellSec, setDwellSec] = useState(0);
   const [stage1AutoCatch, setStage1AutoCatch] = useState<Stage1AutoCatch | null>(null);
   const [welcomeBack, setWelcomeBack] = useState<WelcomeBackPrompt | null>(null);
+  const [cameraAngleWarning, setCameraAngleWarning] = useState<CameraAngleWarning | null>(null);
   const [whisper, setWhisper] = useState<WhisperToast | null>(null);
   const [frameGeometry, setFrameGeometry] = useState<FrameGeometry | null>(null);
   const [availableCameras, setAvailableCameras] = useState<CameraDeviceOption[]>([]);
@@ -174,19 +182,49 @@ export function useStillSession({
   const fpsSamplesRef = useRef<number[]>([]);
   const testGlowTimerRef = useRef<number | null>(null);
   const whisperTimerRef = useRef<number | null>(null);
+  const welcomeBackTimerRef = useRef<number | null>(null);
   const welcomeBackRef = useRef<WelcomeBackPrompt | null>(null);
   welcomeBackRef.current = welcomeBack;
 
-  const showWhisper = useCallback((message: string, undoEventId?: string, durationMs = 5500) => {
-    if (whisperTimerRef.current) {
-      window.clearTimeout(whisperTimerRef.current);
+  // Camera angle guard & lightweight telemetry refs
+  const cameraAngleWarningRef = useRef<CameraAngleWarning | null>(null);
+  cameraAngleWarningRef.current = cameraAngleWarning;
+  const badAngleSinceMsRef = useRef<number | null>(null);
+  const goodAngleSinceMsRef = useRef<number | null>(null);
+  const angleWarningAckedRef = useRef(false);
+  const wasSpeakingRef = useRef(false);
+  const lastBgAudioLogMsRef = useRef(0);
+  const lastPosturePromptCreatedAtRef = useRef(0);
+
+  const triggerWelcomeBackToast = useCallback((prompt: WelcomeBackPrompt) => {
+    if (welcomeBackTimerRef.current) {
+      window.clearTimeout(welcomeBackTimerRef.current);
     }
-    setWhisper({ id: Date.now(), message, undoEventId });
-    whisperTimerRef.current = window.setTimeout(() => {
-      setWhisper(null);
-      whisperTimerRef.current = null;
-    }, durationMs);
+    setWelcomeBack(prompt);
+    welcomeBackTimerRef.current = window.setTimeout(() => {
+      setWelcomeBack(null);
+      welcomeBackTimerRef.current = null;
+    }, WELCOME_BACK_TOAST_MS);
   }, []);
+
+  const showWhisper = useCallback(
+    (
+      message: string,
+      undoEventId?: string,
+      durationMs = 5500,
+      falseAlarmEventId?: string
+    ) => {
+      if (whisperTimerRef.current) {
+        window.clearTimeout(whisperTimerRef.current);
+      }
+      setWhisper({ id: Date.now(), message, undoEventId, falseAlarmEventId });
+      whisperTimerRef.current = window.setTimeout(() => {
+        setWhisper(null);
+        whisperTimerRef.current = null;
+      }, durationMs);
+    },
+    []
+  );
 
   const dismissWhisper = useCallback(() => {
     if (whisperTimerRef.current) {
@@ -299,6 +337,10 @@ export function useStillSession({
     resetDwellState();
     setFrameGeometry(null);
     lastFrameRef.current = null;
+    setCameraAngleWarning(null);
+    badAngleSinceMsRef.current = null;
+    goodAngleSinceMsRef.current = null;
+    angleWarningAckedRef.current = false;
     setInMeetingMode(false);
     setVoiceCalibrating(false);
     setStatus('idle');
@@ -482,14 +524,49 @@ export function useStillSession({
       );
       rhythmRef.current = nextRhythm;
       setRhythm(nextRhythm);
+
+      // Lightweight diagnostic telemetry for speaking, background audio filtering & posture prompts
+      if (nextRhythm.isSpeaking && !wasSpeakingRef.current) {
+        wasSpeakingRef.current = true;
+        appendTelemetry('speaking-start', `Speaking (${nextRhythm.speakingSource})`, {
+          db: nextRhythm.voiceDb,
+          lips: nextRhythm.lipTransitions,
+          src: nextRhythm.speakingSource,
+        });
+      } else if (!nextRhythm.isSpeaking) {
+        wasSpeakingRef.current = false;
+      }
+
+      if (nextRhythm.backgroundAudioIgnored && wallNow - lastBgAudioLogMsRef.current >= 45_000) {
+        lastBgAudioLogMsRef.current = wallNow;
+        appendTelemetry('bg-audio-ignored', 'Background audio ignored (lips still)', {
+          db: nextRhythm.voiceDb,
+          lips: nextRhythm.lipTransitions,
+        });
+      }
+
+      if (
+        nextRhythm.pendingPosturePrompt &&
+        nextRhythm.pendingPosturePrompt.createdAt !== lastPosturePromptCreatedAtRef.current
+      ) {
+        lastPosturePromptCreatedAtRef.current = nextRhythm.pendingPosturePrompt.createdAt;
+        appendTelemetry(
+          'posture-prompt',
+          `Suggested ${nextRhythm.pendingPosturePrompt.candidate}`,
+          {
+            reason: nextRhythm.pendingPosturePrompt.reason,
+            dualCam: nextRhythm.dualCameraActive,
+          }
+        );
+      }
     }
 
-    // Track stepping away >= 5 minutes -> Welcome Back check-in on return
+    // Track stepping away >= 5 minutes -> non-blocking 20-second Welcome Back whisper on return
     if (frame.facePresent) {
       if (awaySinceMsRef.current !== null) {
         const awayMs = wallNow - awaySinceMsRef.current;
-        if (awayMs >= WELCOME_BACK_THRESHOLD_MS && !welcomeBackRef.current) {
-          setWelcomeBack({
+        if (awayMs >= WELCOME_BACK_THRESHOLD_MS) {
+          triggerWelcomeBackToast({
             awayMinutes: Math.max(5, Math.round(awayMs / 60_000)),
             reason: 'stepped-away',
           });
@@ -503,8 +580,60 @@ export function useStillSession({
       }
     }
 
-    // Classic Still two-stage gentle brow awareness alerting logic
-    if (!pauseSheetOpenRef.current && !welcomeBackRef.current) {
+    // Proactive camera-angle check: if angle is badly tilted/side/clipped for >=6s, pause brow alerts & ask user
+    if (frame.facePresent && !frame.usingOcclusionCache && !angleWarningAckedRef.current) {
+      const badReason: CameraAngleWarning['reason'] | null = frame.faceEdgeClipped
+        ? 'edge'
+        : frame.sideAngle
+          ? 'side'
+          : frame.topDownStrength >= 0.44
+            ? 'top-down'
+            : null;
+
+      if (badReason) {
+        goodAngleSinceMsRef.current = null;
+        if (badAngleSinceMsRef.current === null) {
+          badAngleSinceMsRef.current = now;
+        } else if (
+          !cameraAngleWarningRef.current &&
+          now - badAngleSinceMsRef.current >= BAD_ANGLE_HOLD_MS
+        ) {
+          const label =
+            badReason === 'top-down'
+              ? 'Camera looks angled steeply from above'
+              : badReason === 'edge'
+                ? 'Your face is near the edge of the camera frame'
+                : 'Camera looks angled off to the side';
+          const warn: CameraAngleWarning = {
+            reason: badReason,
+            label,
+            sinceMs: wallNow,
+          };
+          setCameraAngleWarning(warn);
+          resetDwellState();
+          appendTelemetry('camera-angle-warn', label, {
+            reason: badReason,
+            side: frame.sideAngle,
+            topDown: Number(frame.topDownStrength.toFixed(2)),
+          });
+        }
+      } else {
+        badAngleSinceMsRef.current = null;
+        if (cameraAngleWarningRef.current) {
+          if (goodAngleSinceMsRef.current === null) {
+            goodAngleSinceMsRef.current = now;
+          } else if (now - goodAngleSinceMsRef.current >= GOOD_ANGLE_CLEAR_MS) {
+            setCameraAngleWarning(null);
+            goodAngleSinceMsRef.current = null;
+          }
+        }
+      }
+    } else if (!frame.facePresent) {
+      badAngleSinceMsRef.current = null;
+    }
+
+    // Classic Still two-stage gentle brow awareness alerting logic (never blocked by welcomeBack toast!)
+    if (!pauseSheetOpenRef.current && !cameraAngleWarningRef.current) {
       if (frame.handInZone) {
         lastHandInZoneMsRef.current = now;
         const nextDwell = Math.min(s.stage2DwellSec + 1.5, dwellRef.current + dt);
@@ -536,6 +665,12 @@ export function useStillSession({
           if (s.desktopVisualBanner) {
             fireVisualDesktopBanner('stage1', s.userName);
           }
+          appendTelemetry('stage1', 'Stage 1 gentle cue', {
+            dwell: Number(nextDwell.toFixed(2)),
+            ratio: frame.closestRatio !== null ? Number(frame.closestRatio.toFixed(2)) : null,
+            side: frame.sideAngle,
+            topDown: Number(frame.topDownStrength.toFixed(2)),
+          });
           setStage1AutoCatch({
             startedAt: wallNow,
             handClearedAt: null,
@@ -554,6 +689,12 @@ export function useStillSession({
           if (s.desktopVisualBanner) {
             fireVisualDesktopBanner('stage2', s.userName);
           }
+          appendTelemetry('stage2', 'Stage 2 pause sheet opened', {
+            dwell: Number(nextDwell.toFixed(2)),
+            ratio: frame.closestRatio !== null ? Number(frame.closestRatio.toFixed(2)) : null,
+            side: frame.sideAngle,
+            topDown: Number(frame.topDownStrength.toFixed(2)),
+          });
           onStage2TriggeredRef.current();
         }
       } else {
@@ -584,6 +725,7 @@ export function useStillSession({
             setStage1AutoCatch(null);
             setEdgeGlowActive(false);
             const eventId = onStage1AutoCaughtRef.current();
+            appendTelemetry('auto-catch', 'Stage 1 auto-caught redirect');
             showWhisper('Hand lowered · urge redirected', eventId, 6500);
           } else {
             setStage1AutoCatch({
@@ -909,6 +1051,21 @@ export function useStillSession({
       fpsSamplesRef.current = [];
       processorRef.current?.resetSession(calibrationRef.current);
       resetDwellState();
+      setCameraAngleWarning(null);
+      badAngleSinceMsRef.current = null;
+      goodAngleSinceMsRef.current = null;
+      angleWarningAckedRef.current = false;
+      if (welcomeBackTimerRef.current) {
+        window.clearTimeout(welcomeBackTimerRef.current);
+        welcomeBackTimerRef.current = null;
+      }
+      setWelcomeBack(null);
+      appendTelemetry('session-start', 'Session started', {
+        cam: videoTrack?.label || 'default',
+        mic: settingsRef.current.micEnabled,
+        desk: settingsRef.current.workContext,
+      });
+
       setStatus('running');
       rafRef.current = requestAnimationFrame(runLoop);
 
@@ -1027,7 +1184,7 @@ export function useStillSession({
   useEffect(() => {
     if (status !== 'running') return;
     const interval = window.setInterval(() => {
-      if (pauseSheetOpenRef.current || welcomeBackRef.current) return;
+      if (pauseSheetOpenRef.current) return;
       if (document.visibilityState !== 'visible' && !pipActiveRef.current) return;
       const sinceFace = Date.now() - lastFaceSeenMsRef.current;
       if (sinceFace <= AWAY_PAUSE_CALM_MS) {
@@ -1047,7 +1204,7 @@ export function useStillSession({
     return () => window.clearInterval(interval);
   }, [status]);
 
-  // Visibility change handler for Welcome Back check-in
+  // Visibility change handler for non-blocking 20-second Welcome Back whisper
   useEffect(() => {
     const onVisibility = () => {
       if (!runningRef.current) return;
@@ -1061,7 +1218,7 @@ export function useStillSession({
         if (hiddenAt && !pipActiveRef.current) {
           const awayMs = Date.now() - hiddenAt;
           if (awayMs >= WELCOME_BACK_THRESHOLD_MS) {
-            setWelcomeBack({
+            triggerWelcomeBackToast({
               awayMinutes: Math.max(5, Math.round(awayMs / 60_000)),
               reason: 'tab-returned',
             });
@@ -1080,7 +1237,7 @@ export function useStillSession({
 
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [showWhisper, stopSession]);
+  }, [showWhisper, stopSession, triggerWelcomeBackToast]);
 
   useEffect(() => {
     return () => {
@@ -1088,6 +1245,7 @@ export function useStillSession({
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       if (testGlowTimerRef.current) window.clearTimeout(testGlowTimerRef.current);
       if (whisperTimerRef.current) window.clearTimeout(whisperTimerRef.current);
+      if (welcomeBackTimerRef.current) window.clearTimeout(welcomeBackTimerRef.current);
       stopCameraTracks();
       voiceMonitorRef.current?.stop();
       dualCamRef.current?.stop();
@@ -1140,6 +1298,7 @@ export function useStillSession({
 
   const confirmPosturePrompt = useCallback(
     (accepted: boolean) => {
+      const candidate = rhythmRef.current.pendingPosturePrompt?.candidate ?? null;
       processorRef.current?.resolvePosturePrompt(
         accepted,
         calibrationRef.current,
@@ -1147,6 +1306,11 @@ export function useStillSession({
         (next) => {
           onPostureSwitchedRef.current(next, 'auto');
         }
+      );
+      appendTelemetry(
+        'posture-confirm',
+        accepted ? `Accepted posture switch to ${candidate}` : `Rejected posture switch to ${candidate}`,
+        { accepted, candidate }
       );
       const updated = processorRef.current?.getState(
         settingsRef.current,
@@ -1312,12 +1476,47 @@ export function useStillSession({
     );
   }, [showWhisper]);
 
-  const cancelStage1FalseAlarm = useCallback(() => {
-    resetDwellState();
-    showWhisper('Marked as false alarm — calm time untouched', undefined, 4000);
-  }, [resetDwellState, showWhisper]);
+  const acknowledgeCameraAngle = useCallback(() => {
+    angleWarningAckedRef.current = true;
+    badAngleSinceMsRef.current = null;
+    goodAngleSinceMsRef.current = null;
+    setCameraAngleWarning(null);
+    appendTelemetry('camera-angle-ack', 'User chose to keep watching at current camera angle');
+    showWhisper('Keeping watch at this angle for this session', undefined, 3200);
+  }, [showWhisper]);
+
+  const logFalseAlarmTelemetry = useCallback(
+    (source: string, reason?: FalseAlarmReason) => {
+      const f = lastFrameRef.current;
+      appendTelemetry(
+        reason ? 'false-alarm-tag' : 'false-alarm',
+        reason ? `Tagged false alarm: ${reason}` : `False alarm (${source})`,
+        {
+          source,
+          ...(reason ? { reason } : {}),
+          side: f ? f.sideAngle : null,
+          topDown: f ? Number(f.topDownStrength.toFixed(2)) : null,
+          ratio: f?.closestRatio !== null && f?.closestRatio !== undefined ? Number(f.closestRatio.toFixed(2)) : null,
+          cam: diagnostics.cameraLabel || null,
+        }
+      );
+    },
+    [diagnostics.cameraLabel]
+  );
+
+  const cancelStage1FalseAlarm = useCallback(
+    (falseAlarmEventId?: string) => {
+      resetDwellState();
+      showWhisper('False alarm noted', undefined, 6800, falseAlarmEventId);
+    },
+    [resetDwellState, showWhisper]
+  );
 
   const dismissWelcomeBack = useCallback(() => {
+    if (welcomeBackTimerRef.current) {
+      window.clearTimeout(welcomeBackTimerRef.current);
+      welcomeBackTimerRef.current = null;
+    }
     setWelcomeBack(null);
     lastFaceSeenMsRef.current = Date.now();
     awaySinceMsRef.current = null;
@@ -1332,6 +1531,7 @@ export function useStillSession({
     dwellSec,
     stage1AutoCatch,
     welcomeBack,
+    cameraAngleWarning,
     whisper,
     frameGeometry,
     diagnostics,
@@ -1351,6 +1551,8 @@ export function useStillSession({
     captureNeutralPosture,
     capturePostureReference,
     triggerTestCue,
+    acknowledgeCameraAngle,
+    logFalseAlarmTelemetry,
     cancelStage1FalseAlarm,
     dismissWelcomeBack,
     dismissWhisper,

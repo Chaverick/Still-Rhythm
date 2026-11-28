@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildDailyStory,
   buildSampleDayStory,
+  buildSevenDaySummary,
   type DailyStoryReport,
 } from '../lib/patterns';
 import {
@@ -79,11 +80,13 @@ export function PatternsView({
   onCopiedDigest,
 }: PatternsViewProps) {
   const [subTab, setSubTab] = useState<PatternsSubTab>('story');
+  const [storyDrawerOpen, setStoryDrawerOpen] = useState(false);
   const [metric, setMetric] = useState<MetricKey>('calm');
   const [previewSample, setPreviewSample] = useState(false);
   const [selectedHourIdx, setSelectedHourIdx] = useState<number>(0);
   const timelineCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const sevenDay = useMemo(() => buildSevenDaySummary(days, events), [days, events]);
   const todayKey = getLocalDateKey();
   const yesterdayKey = useMemo(() => {
     const d = new Date();
@@ -176,7 +179,7 @@ export function PatternsView({
 
   // Draw calm Warm Paper / Editorial Dark synchronized timeline canvas
   useEffect(() => {
-    if (subTab !== 'story') return;
+    if (subTab !== 'story' || !storyDrawerOpen) return;
     const canvas = timelineCanvasRef.current;
     if (!canvas || activeStory.hourly.length === 0) return;
     const ctx = canvas.getContext('2d');
@@ -295,7 +298,7 @@ export function PatternsView({
       ctx.fillText(pt.shortLabel, x, h - 8);
     });
     ctx.textAlign = 'start';
-  }, [activeStory, restlessnessThreshold, selectedHourIdx, subTab]);
+  }, [activeStory, restlessnessThreshold, selectedHourIdx, subTab, storyDrawerOpen]);
 
   const handleTimelineClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -497,47 +500,101 @@ export function PatternsView({
         />
       ) : (
         <>
-          {/* Daily Story & Plain-English Pattern Summary */}
-          <section className="editorial-section" aria-label="Daily pattern summary">
-        <div className="section-head-row">
-          <div className="story-picker-row">
-            <h2 className="section-heading">
-              {previewSample ? 'Sample day preview' : `${activeStory.titleLabel}'s story`}
-            </h2>
-            {!previewSample && storyDateOptions.length > 1 && (
-              <select
-                aria-label="Choose day to review"
-                className="editorial-select editorial-select--compact"
-                value={storyDateKey}
-                onChange={(e) => setStoryDateKey(e.target.value)}
-              >
-                {storyDateOptions.map((k) => (
-                  <option key={k} value={k}>
-                    {formatDayLabel(k, todayKey, yesterdayKey)}
-                  </option>
-                ))}
-              </select>
+          {/* Last 7 Days at a Glance — crisp 2–3 plain-English lines */}
+          <section className="story-card seven-day-card" aria-label="Last 7 days summary">
+            <div className="section-head-row">
+              <h2 className="section-heading">Last 7 days</h2>
+              <span className="section-meta tabular">
+                {sevenDay.activeDays > 0
+                  ? `${sevenDay.activeDays} active ${sevenDay.activeDays === 1 ? 'day' : 'days'}`
+                  : 'Getting started'}
+              </span>
+            </div>
+
+            {sevenDay.activeDays > 0 && (
+              <div className="story-metrics-row tabular">
+                <div>
+                  <span className="story-metric-label">Calm</span>
+                  <span className="story-metric-val">
+                    {formatShortDuration(sevenDay.totalCalmSeconds)}
+                  </span>
+                </div>
+                <div>
+                  <span className="story-metric-label">Standing</span>
+                  <span className="story-metric-val">
+                    {sevenDay.standingPct !== null ? `${sevenDay.standingPct}%` : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="story-metric-label">Redirected</span>
+                  <span className="story-metric-val">{sevenDay.totalRedirected}</span>
+                </div>
+                <div>
+                  <span className="story-metric-label">Calm resets</span>
+                  <span className="story-metric-val">{sevenDay.totalResets}</span>
+                </div>
+              </div>
             )}
-          </div>
 
-          <div className="settings-inline-actions">
-            <button
-              type="button"
-              className="text-link-btn"
-              onClick={() => setPreviewSample((p) => !p)}
+            <div className="seven-day-lines">
+              {sevenDay.summaryLines.map((line, i) => (
+                <p key={i} className="seven-day-line">
+                  {line}
+                </p>
+              ))}
+            </div>
+          </section>
+
+          {/* Progressive-disclosure drawers for detailed insights, timeline & charts */}
+          <div className="drawer-stack">
+            <details
+              className="streamline-drawer"
+              open={storyDrawerOpen}
+              onToggle={(e) => setStoryDrawerOpen(e.currentTarget.open)}
             >
-              {previewSample ? '← Back to my real data' : 'Preview sample day'}
-            </button>
-            <span className="meta-dot" aria-hidden="true">
-              ·
-            </span>
-            <button type="button" className="text-link-btn" onClick={() => void handleCopyDigest()}>
-              Copy summary
-            </button>
-          </div>
-        </div>
+              <summary className="streamline-drawer-summary">
+                <span>Detailed daily insights &amp; timeline</span>
+                <span className="streamline-drawer-meta">
+                  {previewSample ? 'Sample preview' : activeStory.titleLabel}
+                </span>
+              </summary>
+              <div className="streamline-drawer-body">
+                <div className="section-head-row" style={{ marginBottom: 14 }}>
+                  <div className="story-picker-row">
+                    {!previewSample && storyDateOptions.length > 1 && (
+                      <select
+                        aria-label="Choose day to review"
+                        className="editorial-select editorial-select--compact"
+                        value={storyDateKey}
+                        onChange={(e) => setStoryDateKey(e.target.value)}
+                      >
+                        {storyDateOptions.map((k) => (
+                          <option key={k} value={k}>
+                            {formatDayLabel(k, todayKey, yesterdayKey)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
 
-        <div className="story-card">
+                  <div className="settings-inline-actions">
+                    <button
+                      type="button"
+                      className="text-link-btn"
+                      onClick={() => setPreviewSample((p) => !p)}
+                    >
+                      {previewSample ? '← Back to my real data' : 'Preview sample day'}
+                    </button>
+                    <span className="meta-dot" aria-hidden="true">
+                      ·
+                    </span>
+                    <button type="button" className="text-link-btn" onClick={() => void handleCopyDigest()}>
+                      Copy summary
+                    </button>
+                  </div>
+                </div>
+
+                <div className="story-card story-card--flat">
           {!activeStory.hasEnoughData && !previewSample ? (
             <div className="empty-story-box">
               <p className="empty-story-title">Your first next-day summary starts tomorrow.</p>
@@ -668,12 +725,11 @@ export function PatternsView({
               </div>
             </>
           )}
-        </div>
-      </section>
+                </div>
+              </div>
+            </details>
 
-      {/* Progressive-disclosure drawers for deeper history & charts (zero features lost) */}
-      <div className="drawer-stack">
-        <details className="streamline-drawer">
+            <details className="streamline-drawer">
           <summary className="streamline-drawer-summary">
             <span>Last 14 days</span>
             <span className="streamline-drawer-meta tabular">

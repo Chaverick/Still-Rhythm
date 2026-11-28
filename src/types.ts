@@ -216,6 +216,8 @@ export interface FrameGeometry {
   usingOcclusionCache: boolean;
   sideAngle: boolean;
   topDownAngle: boolean;
+  topDownStrength: number; // 0..1 steep downward pitch strength
+  faceEdgeClipped: boolean; // face cut off or far off-center
   faceOval: Point2D[];
   leftEye: Point2D[];
   rightEye: Point2D[];
@@ -247,6 +249,8 @@ export interface LiveRhythmState {
   // Audio-visual talking & Voice dB comfort state
   isSpeaking: boolean;
   speakingSource: 'audio-visual' | 'visual' | 'none';
+  lipTransitions: number;
+  backgroundAudioIgnored: boolean;
   voiceDb: number;
   voiceStatus: VoiceComfortStatus;
   micState: MicState;
@@ -289,4 +293,34 @@ export interface Stage1AutoCatch {
 export interface WelcomeBackPrompt {
   awayMinutes: number;
   reason: 'stepped-away' | 'tab-returned';
+}
+
+export type FalseAlarmReason = 'eye-scratch' | 'drinking' | 'ear' | 'other';
+
+export interface CameraAngleWarning {
+  reason: 'side' | 'top-down' | 'edge';
+  label: string;
+  sinceMs: number;
+}
+
+export type TelemetryEventKind =
+  | 'stage1'
+  | 'stage2'
+  | 'auto-catch'
+  | 'false-alarm'
+  | 'false-alarm-tag'
+  | 'camera-angle-warn'
+  | 'camera-angle-ack'
+  | 'speaking-start'
+  | 'bg-audio-ignored'
+  | 'posture-prompt'
+  | 'posture-confirm'
+  | 'session-start';
+
+export interface TelemetryEntry {
+  id: string;
+  t: number; // epoch ms
+  kind: TelemetryEventKind;
+  detail: string;
+  meta?: Record<string, string | number | boolean | null>;
 }

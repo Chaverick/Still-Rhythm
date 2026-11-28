@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { COMPETING_RESPONSES, formatDuration } from '../lib/storage';
 import type {
   CalmingTechniqueId,
+  CameraAngleWarning,
   EngineStatus,
+  FalseAlarmReason,
   MicState,
   PostureChangePrompt,
   PostureState,
@@ -31,12 +33,14 @@ interface PipWindowContentProps {
   stage2DwellSec: number;
   pinnedResponses: string[];
   workContext: WorkContext;
+  sitStandGuidanceEnabled: boolean;
+  micEnabled: boolean;
   postureState: PostureState;
   boutSeconds: number;
   sitWindowMinutes: number;
   standWindowMinutes: number;
   restlessnessLevel: RestlessnessLevel;
-  // New: Voice dB comfort, Meeting/Speaking, Dual-camera confirm, and inline 60s sigh
+  // Voice dB comfort, Meeting/Speaking, Dual-camera confirm, Camera angle check
   voiceDb: number;
   voiceStatus: VoiceComfortStatus;
   micState: MicState;
@@ -45,6 +49,8 @@ interface PipWindowContentProps {
   isSpeaking: boolean;
   inMeetingMode: boolean;
   pendingPosturePrompt: PostureChangePrompt | null;
+  cameraAngleWarning: CameraAngleWarning | null;
+  onAcknowledgeCameraAngle: () => void;
   onTogglePosture: (next: PostureState) => void;
   onConfirmPosturePrompt: (accepted: boolean) => void;
   onToggleMeetingMode: () => void;
@@ -54,6 +60,7 @@ interface PipWindowContentProps {
   onAutoCatch: (responseId: string) => void;
   onGraceRecovery: () => void;
   onFalseAlarm: () => void;
+  onTagFalseAlarm: (reason: FalseAlarmReason) => void;
   onClosePiP: () => void;
 }
 
@@ -74,6 +81,8 @@ export function PipWindowContent({
   stage2DwellSec,
   pinnedResponses,
   workContext,
+  sitStandGuidanceEnabled,
+  micEnabled,
   postureState,
   boutSeconds,
   sitWindowMinutes,
@@ -87,6 +96,8 @@ export function PipWindowContent({
   isSpeaking,
   inMeetingMode,
   pendingPosturePrompt,
+  cameraAngleWarning,
+  onAcknowledgeCameraAngle,
   onTogglePosture,
   onConfirmPosturePrompt,
   onToggleMeetingMode,
@@ -96,14 +107,23 @@ export function PipWindowContent({
   onAutoCatch,
   onGraceRecovery,
   onFalseAlarm,
+  onTagFalseAlarm,
   onClosePiP,
 }: PipWindowContentProps) {
   const [pacerOpen, setPacerOpen] = useState(false);
+  const [compactMode, setCompactMode] = useState(false);
+  const [showFalseTagRow, setShowFalseTagRow] = useState(false);
+
+  useEffect(() => {
+    if (!showFalseTagRow) return;
+    const t = window.setTimeout(() => setShowFalseTagRow(false), 6500);
+    return () => window.clearTimeout(t);
+  }, [showFalseTagRow]);
 
   const isRunning = status === 'running';
   const camBroken = isRunning && (cameraState !== 'live' || cameraStalled);
   const camActivelyDetecting = isRunning && !camBroken && detectCount > 0;
-  const isGlowing = !camBroken && (stage2AlertOpen || stage1Glow || handInZone);
+  const isGlowing = !camBroken && !cameraAngleWarning && (stage2AlertOpen || stage1Glow || handInZone);
   const dwellPct = Math.min(100, Math.round((dwellSec / Math.max(0.5, stage2DwellSec)) * 100));
   const cleanName = userName.trim();
 
@@ -127,35 +147,38 @@ export function PipWindowContent({
   const confirmText = !isRunning
     ? 'Paused'
     : camBroken
-      ? 'Camera paused · click tab'
+      ? 'Camera paused'
       : camActivelyDetecting
         ? `Live · ${fps.toFixed(0)} FPS`
         : 'Starting…';
 
   const statusChip = !isRunning
     ? 'Idle'
-    : faceState === 'away'
-      ? 'Away'
-      : inMeetingMode
-        ? 'Meeting'
-        : isSpeaking
-          ? 'Speaking'
-          : restlessnessLevel === 'restless'
-            ? 'Restless'
-            : restlessnessLevel === 'stirring'
-              ? 'Stirring'
-              : 'Settled';
+    : cameraAngleWarning
+      ? 'Check angle'
+      : faceState === 'away'
+        ? 'Away'
+        : inMeetingMode
+          ? 'Meeting'
+          : isSpeaking
+            ? 'Speaking'
+            : restlessnessLevel === 'restless'
+              ? 'Restless'
+              : restlessnessLevel === 'stirring'
+                ? 'Stirring'
+                : 'Settled';
 
   const dwellRatio = Math.min(1, Math.max(0, dwellSec / Math.max(0.5, stage2DwellSec)));
-  const pipGlowLevel = camBroken
-    ? 0
-    : stage2AlertOpen
-      ? 1
-      : stage1Glow
-        ? Math.max(0.48, Math.min(0.88, dwellRatio))
-        : handInZone
-          ? Math.max(0.14, dwellRatio * 0.72)
-          : 0;
+  const pipGlowLevel =
+    camBroken || cameraAngleWarning
+      ? 0
+      : stage2AlertOpen
+        ? 1
+        : stage1Glow
+          ? Math.max(0.48, Math.min(0.88, dwellRatio))
+          : handInZone
+            ? Math.max(0.14, dwellRatio * 0.72)
+            : 0;
 
   const pipGlowStyle: React.CSSProperties | undefined =
     pipGlowLevel > 0.02
@@ -166,9 +189,22 @@ export function PipWindowContent({
         }
       : undefined;
 
+  // In compact mode, automatically surface the alert headline + dwell bar the moment a hand rises!
+  const showHeadlineBlock = !compactMode || isGlowing || camBroken;
+
+  const handlePipFalseAlarm = () => {
+    onFalseAlarm();
+    setShowFalseTagRow(true);
+  };
+
+  const handlePickFalseTag = (reason: FalseAlarmReason) => {
+    onTagFalseAlarm(reason);
+    setShowFalseTagRow(false);
+  };
+
   return (
     <div
-      className={`pip-shell ${
+      className={`pip-shell ${compactMode && !stage2AlertOpen && !pacerOpen ? 'pip-shell--compact' : ''} ${
         stage2AlertOpen ? 'pip-shell--alert' : isGlowing ? 'pip-shell--stage1' : ''
       }`}
       style={pipGlowStyle}
@@ -190,9 +226,21 @@ export function PipWindowContent({
             {confirmText} · <strong>{statusChip}</strong>
           </span>
         </div>
-        <button type="button" className="text-link-btn text-link-btn--muted pip-tab-btn" onClick={onClosePiP}>
-          Tab ↗
-        </button>
+        <div className="pip-top-actions">
+          {!stage2AlertOpen && !pacerOpen && (
+            <button
+              type="button"
+              className="text-link-btn text-link-btn--muted pip-tab-btn"
+              title={compactMode ? 'Show full mini-window' : 'Switch to compact strip'}
+              onClick={() => setCompactMode((c) => !c)}
+            >
+              {compactMode ? 'Expand' : 'Compact'}
+            </button>
+          )}
+          <button type="button" className="text-link-btn text-link-btn--muted pip-tab-btn" onClick={onClosePiP}>
+            Tab ↗
+          </button>
+        </div>
       </div>
 
       {stage2AlertOpen ? (
@@ -212,7 +260,7 @@ export function PipWindowContent({
             <button type="button" className="btn btn-subtle btn-sm" onClick={onGraceRecovery}>
               Grace
             </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onFalseAlarm}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={handlePipFalseAlarm}>
               False alarm
             </button>
           </div>
@@ -231,30 +279,93 @@ export function PipWindowContent({
         </div>
       ) : (
         <div className="pip-calm-body">
-          {/* 1. Eyebrow Awareness Headline + Live Dwell Bar */}
-          <div>
-            <h2 className="pip-headline">
-              {camBroken
-                ? 'Detection paused'
-                : isGlowing
-                  ? cleanName
-                    ? `${cleanName}, hand near zone · ${dwellSec.toFixed(1)}s`
-                    : `Hand near zone · ${dwellSec.toFixed(1)}s`
-                  : !isRunning
-                    ? 'Session paused'
-                    : faceState === 'away'
-                      ? 'Waiting until you return'
-                      : restlessnessLevel === 'restless' && !inMeetingMode && !isSpeaking
-                        ? 'A quick sigh could help.'
-                        : 'Hands at ease.'}
-            </h2>
-            <div className="dwell-track" style={{ marginTop: 6 }}>
-              <div className="dwell-fill" style={{ width: `${dwellPct}%` }} />
+          {/* Proactive Camera Angle Warning inside PiP (auto-clears when adjusted) */}
+          {isRunning && cameraAngleWarning && (
+            <div className="pip-angle-bar" role="status">
+              <span className="pip-angle-text">
+                Angle looks off — alerts paused
+              </span>
+              <button
+                type="button"
+                className="btn btn-subtle btn-xs"
+                onClick={onAcknowledgeCameraAngle}
+              >
+                Watch anyway
+              </button>
             </div>
-          </div>
+          )}
 
-          {/* 2. Crystal-Clear Sitting | Standing Toggle + Visible Stretch Track */}
-          {workContext === 'desk' && (
+          {/* Optional post-false-alarm 1-tap label strip (auto-vanishes in 6.5s) */}
+          {showFalseTagRow && (
+            <div className="pip-angle-bar" role="status">
+              <span className="pip-angle-text">Was it:</span>
+              <div className="pip-confirm-btns">
+                <button
+                  type="button"
+                  className="btn btn-subtle btn-xs"
+                  onClick={() => handlePickFalseTag('eye-scratch')}
+                >
+                  Eye scratch
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => handlePickFalseTag('drinking')}
+                >
+                  Drink
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => handlePickFalseTag('ear')}
+                >
+                  Ear
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 1. Eyebrow Awareness Headline + Dwell Bar (auto-appears in compact mode when hand rises!) */}
+          {showHeadlineBlock && (
+            <div>
+              <h2 className="pip-headline">
+                {camBroken
+                  ? 'Detection paused'
+                  : isGlowing
+                    ? cleanName
+                      ? `${cleanName}, hand near zone · ${dwellSec.toFixed(1)}s`
+                      : `Hand near zone · ${dwellSec.toFixed(1)}s`
+                    : !isRunning
+                      ? 'Session paused'
+                      : faceState === 'away'
+                        ? 'Waiting until you return'
+                        : restlessnessLevel === 'restless' && !inMeetingMode && !isSpeaking
+                          ? 'A quick sigh could help.'
+                          : 'Hands at ease.'}
+              </h2>
+              <div className="dwell-track" style={{ marginTop: 6 }}>
+                <div className="dwell-fill" style={{ width: `${dwellPct}%` }} />
+              </div>
+            </div>
+          )}
+
+          {/* Compact single-line Calm & Redirected summary when collapsed */}
+          {compactMode && (
+            <div className="pip-compact-stats tabular">
+              <span>
+                Calm <strong>{formatDuration(calmSeconds)}</strong>
+              </span>
+              <span className="pip-compact-dot" aria-hidden="true">
+                ·
+              </span>
+              <span>
+                Redirected <strong>{urgesRedirected}</strong>
+              </span>
+            </div>
+          )}
+
+          {/* 2. Sitting | Standing Toggle (modular: hides when sit/stand guide is off or Away) */}
+          {workContext === 'desk' && sitStandGuidanceEnabled && (
             <div className="pip-posture-strip">
               <div className="pip-posture-head">
                 <div className="segmented segmented--mini posture-segmented" role="group" aria-label="Desk position">
@@ -315,60 +426,64 @@ export function PipWindowContent({
             </div>
           )}
 
-          {/* 3. Live Voice Level (dB) Comfort Strip */}
-          <div className="pip-voice-strip">
-            <div className="pip-voice-head">
-              <span className="pip-voice-label">Voice</span>
-              <span
-                className={`pip-voice-val tabular ${
-                  voiceStatus === 'loud'
-                    ? 'pip-voice-val--loud'
-                    : voiceStatus === 'comfortable'
-                      ? 'pip-voice-val--ok'
-                      : ''
+          {/* 3. Live Voice Level (dB) Comfort Strip (modular: hides when mic is turned off) */}
+          {micEnabled && (
+            <div className="pip-voice-strip">
+              <div className="pip-voice-head">
+                <span className="pip-voice-label">Voice</span>
+                <span
+                  className={`pip-voice-val tabular ${
+                    voiceStatus === 'loud'
+                      ? 'pip-voice-val--loud'
+                      : voiceStatus === 'comfortable'
+                        ? 'pip-voice-val--ok'
+                        : ''
+                  }`}
+                >
+                  {micState === 'active'
+                    ? voiceStatus === 'loud'
+                      ? `${voiceDb} dB · Loud`
+                      : `${voiceDb} dB`
+                    : micState === 'denied'
+                      ? 'Mic blocked'
+                      : 'Mic off'}
+                </span>
+              </div>
+              <div
+                className={`voice-meter-track voice-meter-track--compact ${
+                  voiceStatus === 'loud' ? 'voice-meter-track--loud' : ''
                 }`}
               >
-                {micState === 'active'
-                  ? voiceStatus === 'loud'
-                    ? `${voiceDb} dB · Loud`
-                    : `${voiceDb} dB`
-                  : micState === 'denied'
-                    ? 'Mic blocked'
-                    : 'Mic off'}
-              </span>
+                <div
+                  className="voice-comfort-band"
+                  style={{ left: `${comfortStartPct}%`, width: `${comfortWidthPct}%` }}
+                />
+                <div
+                  className={`voice-meter-fill ${
+                    voiceStatus === 'loud'
+                      ? 'voice-meter-fill--loud'
+                      : voiceStatus === 'comfortable'
+                        ? 'voice-meter-fill--ok'
+                        : ''
+                  }`}
+                  style={{ width: `${liveDbPct}%` }}
+                />
+              </div>
             </div>
-            <div
-              className={`voice-meter-track voice-meter-track--compact ${
-                voiceStatus === 'loud' ? 'voice-meter-track--loud' : ''
-              }`}
-            >
-              <div
-                className="voice-comfort-band"
-                style={{ left: `${comfortStartPct}%`, width: `${comfortWidthPct}%` }}
-              />
-              <div
-                className={`voice-meter-fill ${
-                  voiceStatus === 'loud'
-                    ? 'voice-meter-fill--loud'
-                    : voiceStatus === 'comfortable'
-                      ? 'voice-meter-fill--ok'
-                      : ''
-                }`}
-                style={{ width: `${liveDbPct}%` }}
-              />
-            </div>
-          </div>
+          )}
 
-          <div className="pip-metrics">
-            <div>
-              <span className="pip-metric-label">Calm</span>
-              <span className="pip-metric-val tabular">{formatDuration(calmSeconds)}</span>
+          {!compactMode && (
+            <div className="pip-metrics">
+              <div>
+                <span className="pip-metric-label">Calm</span>
+                <span className="pip-metric-val tabular">{formatDuration(calmSeconds)}</span>
+              </div>
+              <div>
+                <span className="pip-metric-label">Redirected</span>
+                <span className="pip-metric-val tabular">{urgesRedirected}</span>
+              </div>
             </div>
-            <div>
-              <span className="pip-metric-label">Redirected</span>
-              <span className="pip-metric-val tabular">{urgesRedirected}</span>
-            </div>
-          </div>
+          )}
 
           {/* 4. Three Quick Action Buttons on ONE Single Row: Pause · Meeting · 60s Sigh */}
           <div className="pip-controls pip-controls--triple">

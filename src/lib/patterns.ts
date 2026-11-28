@@ -5,7 +5,7 @@ import {
   totalFaceTouches,
   totalReliefMoves,
 } from './storage';
-import type { DaySummary, FaceTouchRegion, FiveMinBucket } from '../types';
+import type { AwarenessEvent, DaySummary, FaceTouchRegion, FiveMinBucket } from '../types';
 
 export interface HourlySummaryPoint {
   hour: number; // 0..23
@@ -495,4 +495,137 @@ export function buildSampleDayStory(): DailyStoryReport {
   };
 
   return buildDailyStory(dateKey, sampleDay, buckets, 65);
+}
+
+export interface SevenDayOverview {
+  activeDays: number;
+  totalCalmSeconds: number;
+  totalRedirected: number;
+  totalGrace: number;
+  standingPct: number | null;
+  totalTouches: number;
+  totalResets: number;
+  summaryLines: string[];
+}
+
+const SEVEN_DAY_BLOCKS = [
+  { label: 'early morning (5–9am)', start: 5, end: 9 },
+  { label: 'late morning (9am–1pm)', start: 9, end: 13 },
+  { label: 'afternoon (1–5pm)', start: 13, end: 17 },
+  { label: 'evening (5–9pm)', start: 17, end: 21 },
+  { label: 'late night (9pm–1am)', start: 21, end: 25 },
+  { label: 'overnight (1–5am)', start: 1, end: 5 },
+] as const;
+
+export function buildSevenDaySummary(
+  days: Record<string, DaySummary>,
+  events: AwarenessEvent[]
+): SevenDayOverview {
+  const now = new Date();
+  const keys = new Set<string>();
+  let activeDays = 0;
+  let totalCalmSeconds = 0;
+  let totalRedirected = 0;
+  let totalGrace = 0;
+  let totalSitting = 0;
+  let totalStanding = 0;
+  let totalTouches = 0;
+  let totalAdjustments = 0;
+  let totalResets = 0;
+  let bestStandDay: { label: string; pct: number; calmSec: number } | null = null;
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    const key = getLocalDateKey(d.getTime());
+    keys.add(key);
+    const s = days[key];
+    if (!s) continue;
+    const desk = (s.sittingSeconds || 0) + (s.standingSeconds || 0);
+    if (s.calmSeconds >= 60 || desk >= 60 || s.urgesRedirected > 0) {
+      activeDays += 1;
+    }
+    totalCalmSeconds += s.calmSeconds || 0;
+    totalRedirected += s.urgesRedirected || 0;
+    totalGrace += s.graceRecoveries || 0;
+    totalSitting += s.sittingSeconds || 0;
+    totalStanding += s.standingSeconds || 0;
+    totalTouches += totalFaceTouches(s.faceTouches);
+    totalAdjustments += totalReliefMoves(s);
+    totalResets += s.calmingResetsUsed || 0;
+
+    if (desk >= 15 * 60) {
+      const pct = Math.round(((s.standingSeconds || 0) / desk) * 100);
+      if (!bestStandDay || pct > bestStandDay.pct) {
+        bestStandDay = {
+          label: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : describeDayLabel(key),
+          pct,
+          calmSec: s.calmSeconds || 0,
+        };
+      }
+    }
+  }
+
+  const totalDesk = totalSitting + totalStanding;
+  const standingPct = totalDesk >= 120 ? Math.round((totalStanding / totalDesk) * 100) : null;
+
+  // Find peak urge window across the last 7 days
+  const blockCounts = SEVEN_DAY_BLOCKS.map((b) => ({ ...b, count: 0 }));
+  for (const ev of events) {
+    if (!keys.has(ev.dateKey)) continue;
+    if (ev.kind !== 'redirect-stage1' && ev.kind !== 'redirect-stage2' && ev.kind !== 'grace') {
+      continue;
+    }
+    const hr = new Date(ev.timestamp).getHours();
+    const normHr = hr === 0 ? 24 : hr;
+    const found = blockCounts.find((b) => normHr >= b.start && normHr < b.end);
+    if (found) found.count += 1;
+  }
+  const peakBlock = [...blockCounts].sort((a, b) => b.count - a.count)[0];
+
+  const summaryLines: string[] = [];
+
+  if (activeDays === 0) {
+    summaryLines.push(
+      'Your 7-day pattern summary fills in automatically as you use Still Rhythm across the week.'
+    );
+  } else {
+    const urgeTotal = totalRedirected + totalGrace;
+    const redirectPart =
+      urgeTotal > 0
+        ? ` and caught ${totalRedirected} brow ${totalRedirected === 1 ? 'urge' : 'urges'}`
+        : '';
+    summaryLines.push(
+      `Over the last 7 days (${activeDays} active ${activeDays === 1 ? 'day' : 'days'}), you logged ${formatShortDuration(totalCalmSeconds)} of calm time${redirectPart}.`
+    );
+
+    if (standingPct !== null) {
+      summaryLines.push(
+        `Desk balance averaged ${standingPct}% standing (${formatShortDuration(totalStanding)} standing vs. ${formatShortDuration(totalSitting)} sitting)${
+          bestStandDay && activeDays > 1 ? ` — highest on ${bestStandDay.label} (${bestStandDay.pct}%)` : ''
+        }.`
+      );
+    }
+
+    if (peakBlock && peakBlock.count >= 2) {
+      summaryLines.push(
+        `Most brow moments clustered in the ${peakBlock.label} (${peakBlock.count} times) — a quick 60s breath or posture switch right before that window helps most.`
+      );
+    } else if (totalTouches > 0 || totalAdjustments > 0) {
+      summaryLines.push(
+        `Background rhythm logged ${totalTouches} face touches, ${totalAdjustments} neck/shoulder comfort shifts, and ${totalResets} guided calming ${totalResets === 1 ? 'reset' : 'resets'}.`
+      );
+    }
+  }
+
+  return {
+    activeDays,
+    totalCalmSeconds,
+    totalRedirected,
+    totalGrace,
+    standingPct,
+    totalTouches,
+    totalResets,
+    summaryLines,
+  };
 }

@@ -47,6 +47,7 @@ import type {
   CalmingTechniqueId,
   DaySummary,
   FaceTouchRegion,
+  FalseAlarmReason,
   FiveMinBucket,
   NoteEntry,
   PostureCalibration,
@@ -401,15 +402,42 @@ export function App() {
     }
   }, [session.videoRef, pip.pipVideoRef]);
 
+  const handleTagFalseAlarm = useCallback(
+    (reason: FalseAlarmReason, eventId?: string) => {
+      const labelMap: Record<FalseAlarmReason, string> = {
+        'eye-scratch': 'Eye scratch',
+        drinking: 'Drinking',
+        ear: 'Ear touch',
+        other: 'Other',
+      };
+      const tagLabel = labelMap[reason];
+      setEvents((prev) => {
+        const idx = eventId
+          ? prev.findIndex((e) => e.id === eventId)
+          : prev.findIndex((e) => e.kind === 'false-alarm');
+        if (idx < 0) return prev;
+        const next = [...prev];
+        next[idx] = { ...next[idx], tag: tagLabel };
+        saveEvents(next);
+        return next;
+      });
+      session.logFalseAlarmTelemetry('quick-tag', reason);
+      session.showWhisper(`Tagged as ${tagLabel} · saved to debug log`, undefined, 3200);
+    },
+    [session]
+  );
+
   const handleCancelStage1FalseAlarm = useCallback(() => {
-    session.cancelStage1FalseAlarm();
+    const evId = createId();
+    session.logFalseAlarmTelemetry('stage1');
+    session.cancelStage1FalseAlarm(evId);
     recordFalseAlarmMoment();
     updateTodaySummary((cur) => ({
       ...cur,
       falseAlarms: cur.falseAlarms + 1,
     }));
     appendEvent({
-      id: createId(),
+      id: evId,
       timestamp: Date.now(),
       dateKey: getLocalDateKey(),
       kind: 'false-alarm',
@@ -419,6 +447,7 @@ export function App() {
   const handleUndoAutoCatchAsFalseAlarm = useCallback(
     (eventId: string) => {
       const dateKey = getLocalDateKey();
+      const faId = createId();
       setEvents((prev) => {
         const next = prev.filter((e) => e.id !== eventId);
         saveEvents(next);
@@ -430,14 +459,15 @@ export function App() {
         falseAlarms: cur.falseAlarms + 1,
       }));
       appendEvent({
-        id: createId(),
+        id: faId,
         timestamp: Date.now(),
         dateKey,
         kind: 'false-alarm',
       });
       recordFalseAlarmMoment();
+      session.logFalseAlarmTelemetry('undo-autocatch');
       session.dismissWhisper();
-      session.showWhisper('Undone · marked as false alarm', undefined, 3500);
+      session.showWhisper('Undone · false alarm noted', undefined, 6800, faId);
     },
     [appendEvent, recordFalseAlarmMoment, session, updateTodaySummary]
   );
@@ -508,18 +538,20 @@ export function App() {
     session.resetDwellState();
     if (!wasPreview) {
       const dateKey = getLocalDateKey();
+      const faId = createId();
       updateTodaySummary((cur) => ({
         ...cur,
         falseAlarms: cur.falseAlarms + 1,
       }));
       appendEvent({
-        id: createId(),
+        id: faId,
         timestamp: Date.now(),
         dateKey,
         kind: 'false-alarm',
       });
       recordFalseAlarmMoment();
-      session.showWhisper('Dismissed as false alarm', undefined, 3500);
+      session.logFalseAlarmTelemetry('stage2');
+      session.showWhisper('False alarm noted', undefined, 6800, faId);
     }
   }, [appendEvent, pauseSheetState.isPreview, recordFalseAlarmMoment, session, updateTodaySummary]);
 
@@ -572,38 +604,6 @@ export function App() {
     },
     [appendEvent, session, updateTodaySummary]
   );
-
-  const handleWelcomeRedirect = useCallback(() => {
-    updateTodaySummary((cur) => ({
-      ...cur,
-      urgesRedirected: cur.urgesRedirected + 1,
-    }));
-    appendEvent({
-      id: createId(),
-      timestamp: Date.now(),
-      dateKey: getLocalDateKey(),
-      kind: 'redirect-stage1',
-      note: 'Redirected while away',
-    });
-    session.dismissWelcomeBack();
-    session.showWhisper('Welcome back · redirect logged', undefined, 4000);
-  }, [appendEvent, session, updateTodaySummary]);
-
-  const handleWelcomeGrace = useCallback(() => {
-    updateTodaySummary((cur) => ({
-      ...cur,
-      graceRecoveries: cur.graceRecoveries + 1,
-    }));
-    appendEvent({
-      id: createId(),
-      timestamp: Date.now(),
-      dateKey: getLocalDateKey(),
-      kind: 'grace',
-      tag: 'After a walk',
-    });
-    session.dismissWelcomeBack();
-    session.showWhisper('Welcome back · reset with grace', undefined, 4000);
-  }, [appendEvent, session, updateTodaySummary]);
 
   const handleAddNote = useCallback((text: string, tags: string[]) => {
     const entry: NoteEntry = {
@@ -856,6 +856,8 @@ export function App() {
             stage2DwellSec={settings.stage2DwellSec}
             pinnedResponses={settings.pinnedResponses}
             workContext={settings.workContext}
+            sitStandGuidanceEnabled={settings.sitStandGuidanceEnabled}
+            micEnabled={settings.micEnabled}
             postureState={session.rhythm.postureState}
             boutSeconds={session.rhythm.boutSeconds}
             sitWindowMinutes={settings.sitWindowMinutes}
@@ -869,6 +871,8 @@ export function App() {
             isSpeaking={session.rhythm.isSpeaking}
             inMeetingMode={session.inMeetingMode}
             pendingPosturePrompt={session.rhythm.pendingPosturePrompt}
+            cameraAngleWarning={session.cameraAngleWarning}
+            onAcknowledgeCameraAngle={session.acknowledgeCameraAngle}
             onTogglePosture={session.setPostureManual}
             onConfirmPosturePrompt={session.confirmPosturePrompt}
             onToggleMeetingMode={session.toggleMeetingMode}
@@ -881,6 +885,7 @@ export function App() {
             onAutoCatch={handlePauseAutoCatch}
             onGraceRecovery={() => handlePauseGraceRecovery()}
             onFalseAlarm={handlePauseFalseAlarm}
+            onTagFalseAlarm={(reason) => handleTagFalseAlarm(reason)}
             onClosePiP={() => void pip.closePiP()}
           />,
           pip.pipContainer
@@ -962,6 +967,7 @@ export function App() {
             rhythm={session.rhythm}
             inMeetingMode={session.inMeetingMode}
             voiceCalibrating={session.voiceCalibrating}
+            cameraAngleWarning={session.cameraAngleWarning}
             morningStory={morningStory}
             onDismissMorningStory={handleDismissMorningStory}
             onOpenPatterns={() => setActiveTab('patterns')}
@@ -972,6 +978,7 @@ export function App() {
             onToggleMeetingMode={session.toggleMeetingMode}
             onSetPostureManual={session.setPostureManual}
             onConfirmPosturePrompt={session.confirmPosturePrompt}
+            onAcknowledgeCameraAngle={session.acknowledgeCameraAngle}
             onCalibrateVoice={handleCalibrateVoice}
             onSnoozeCalming={session.snoozeCalmingSuggestion}
             onCompleteCalmingReset={handleCompleteCalmingReset}
@@ -996,11 +1003,6 @@ export function App() {
             onDismissFalseAlarmNudge={handleDismissFalseAlarmNudge}
             stage1AutoCatch={session.stage1AutoCatch}
             onCancelStage1FalseAlarm={handleCancelStage1FalseAlarm}
-            welcomeBack={session.welcomeBack}
-            onWelcomeCalm={handleWelcomeCalm}
-            onWelcomeRedirect={handleWelcomeRedirect}
-            onWelcomeGrace={handleWelcomeGrace}
-            onWelcomeDismiss={session.dismissWelcomeBack}
             frameGeometry={session.frameGeometry}
             diagnostics={session.diagnostics}
           />
@@ -1067,7 +1069,7 @@ export function App() {
         )}
       </main>
 
-      {session.whisper && (
+      {session.whisper ? (
         <div className="whisper-toast" role="status" aria-live="polite">
           <span>{session.whisper.message}</span>
           {session.whisper.undoEventId && (
@@ -1081,8 +1083,60 @@ export function App() {
               False alarm
             </button>
           )}
+          {session.whisper.falseAlarmEventId && (
+            <span className="whisper-tag-group">
+              <button
+                type="button"
+                className="whisper-tag-btn"
+                onClick={() =>
+                  handleTagFalseAlarm('eye-scratch', session.whisper!.falseAlarmEventId)
+                }
+              >
+                Eye scratch
+              </button>
+              <button
+                type="button"
+                className="whisper-tag-btn"
+                onClick={() =>
+                  handleTagFalseAlarm('drinking', session.whisper!.falseAlarmEventId)
+                }
+              >
+                Drink
+              </button>
+              <button
+                type="button"
+                className="whisper-tag-btn"
+                onClick={() =>
+                  handleTagFalseAlarm('ear', session.whisper!.falseAlarmEventId)
+                }
+              >
+                Ear
+              </button>
+            </span>
+          )}
         </div>
-      )}
+      ) : session.welcomeBack ? (
+        <div className="whisper-toast" role="status" aria-live="polite">
+          <span>
+            Welcome back · {session.welcomeBack.awayMinutes}m away
+          </span>
+          <button
+            type="button"
+            className="whisper-undo"
+            onClick={() => handleWelcomeCalm(true)}
+          >
+            +{session.welcomeBack.awayMinutes}m calm
+          </button>
+          <button
+            type="button"
+            className="whisper-dismiss"
+            aria-label="Dismiss welcome back notice"
+            onClick={session.dismissWelcomeBack}
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
 
       <PauseSheet
         open={pauseSheetState.open}

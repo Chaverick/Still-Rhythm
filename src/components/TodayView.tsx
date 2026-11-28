@@ -9,6 +9,7 @@ import {
 } from '../lib/storage';
 import type {
   CalmingTechniqueId,
+  CameraAngleWarning,
   DaySummary,
   EngineStatus,
   FrameGeometry,
@@ -18,12 +19,10 @@ import type {
   Stage1AutoCatch,
   StillSettings,
   VisionDiagnostics,
-  WelcomeBackPrompt,
 } from '../types';
 import { CyclicSighPacer } from './CyclicSighPacer';
 import { MorningSummaryCard } from './MorningSummaryCard';
 import { TypewriterHeadline } from './TypewriterHeadline';
-import { WelcomeBackCard } from './WelcomeBackCard';
 
 interface TodayViewProps {
   status: EngineStatus;
@@ -34,6 +33,7 @@ interface TodayViewProps {
   rhythm: LiveRhythmState;
   inMeetingMode: boolean;
   voiceCalibrating: boolean;
+  cameraAngleWarning: CameraAngleWarning | null;
   morningStory: DailyStoryReport | null;
   onDismissMorningStory: () => void;
   onOpenPatterns: () => void;
@@ -44,6 +44,7 @@ interface TodayViewProps {
   onToggleMeetingMode: () => void;
   onSetPostureManual: (next: PostureState) => void;
   onConfirmPosturePrompt: (accepted: boolean) => void;
+  onAcknowledgeCameraAngle: () => void;
   onCalibrateVoice: () => void;
   onSnoozeCalming: () => void;
   onCompleteCalmingReset: (techniqueId: CalmingTechniqueId) => void;
@@ -62,11 +63,6 @@ interface TodayViewProps {
   onDismissFalseAlarmNudge: () => void;
   stage1AutoCatch: Stage1AutoCatch | null;
   onCancelStage1FalseAlarm: () => void;
-  welcomeBack: WelcomeBackPrompt | null;
-  onWelcomeCalm: (addAwayMinutes: boolean) => void;
-  onWelcomeRedirect: () => void;
-  onWelcomeGrace: () => void;
-  onWelcomeDismiss: () => void;
   frameGeometry: FrameGeometry | null;
   diagnostics: VisionDiagnostics;
 }
@@ -80,6 +76,7 @@ export function TodayView({
   rhythm,
   inMeetingMode,
   voiceCalibrating,
+  cameraAngleWarning,
   morningStory,
   onDismissMorningStory,
   onOpenPatterns,
@@ -90,6 +87,7 @@ export function TodayView({
   onToggleMeetingMode,
   onSetPostureManual,
   onConfirmPosturePrompt,
+  onAcknowledgeCameraAngle,
   onCalibrateVoice,
   onSnoozeCalming,
   onCompleteCalmingReset,
@@ -107,11 +105,6 @@ export function TodayView({
   onDismissFalseAlarmNudge,
   stage1AutoCatch,
   onCancelStage1FalseAlarm,
-  welcomeBack,
-  onWelcomeCalm,
-  onWelcomeRedirect,
-  onWelcomeGrace,
-  onWelcomeDismiss,
   frameGeometry,
   diagnostics,
 }: TodayViewProps) {
@@ -233,16 +226,34 @@ export function TodayView({
         />
       )}
 
-      {/* Contextual: Welcome Back Check-In */}
-      {welcomeBack && (
-        <WelcomeBackCard
-          prompt={welcomeBack}
-          userName={name}
-          onCalmReturn={onWelcomeCalm}
-          onRedirectedWhileAway={onWelcomeRedirect}
-          onGraceReturn={onWelcomeGrace}
-          onDismiss={onWelcomeDismiss}
-        />
+      {/* Contextual: Proactive Camera-Angle Check (pauses brow false alarms until adjusted or confirmed) */}
+      {isRunning && cameraAngleWarning && (
+        <section className="nudge-card" role="status" aria-live="polite" aria-label="Camera angle check">
+          <div className="welcome-header">
+            <span className="section-label">Camera angle check · alerts paused</span>
+          </div>
+          <p className="nudge-copy">
+            <strong>{cameraAngleWarning.label}</strong> — this can cause false alarms. Adjust your
+            camera straight on, or confirm to keep watching as is.
+          </p>
+          <div className="welcome-actions">
+            <button
+              type="button"
+              id="btn-ack-camera-angle"
+              className="btn btn-subtle btn-sm"
+              onClick={onAcknowledgeCameraAngle}
+            >
+              Keep watching anyway
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onOpenCameraSetup}
+            >
+              Switch camera
+            </button>
+          </div>
+        </section>
       )}
 
       {/* Contextual: Adaptive False-Alarm Nudge */}
@@ -638,7 +649,8 @@ export function TodayView({
           </div>
         )}
 
-        {/* Band 2: Live Voice Volume (dB) Comfort Meter */}
+        {/* Band 2: Live Voice Volume (dB) Comfort Meter (modular: hides when mic is turned off) */}
+        {settings.micEnabled && (
         <div className="rhythm-band">
           <div className="rhythm-band-head">
             <div className="rhythm-band-title-col">
@@ -654,9 +666,7 @@ export function TodayView({
                   }`}
                 >
                   {!isRunning
-                    ? settings.micEnabled
-                      ? 'Starts with session'
-                      : 'Mic off'
+                    ? 'Starts with session'
                     : rhythm.micState === 'denied'
                       ? 'Mic blocked'
                       : rhythm.micState !== 'active'
@@ -724,6 +734,7 @@ export function TodayView({
             <span>Loud</span>
           </div>
         </div>
+        )}
 
         {/* Band 3: Quiet Background Signals (one clean 3-column row, zero alerts) */}
         <div className="rhythm-band rhythm-band--quiet">

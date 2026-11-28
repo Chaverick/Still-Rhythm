@@ -9,6 +9,8 @@ import type {
   PostureCalibration,
   PostureState,
   StillSettings,
+  TelemetryEntry,
+  TelemetryEventKind,
   ThemeMode,
 } from '../types';
 
@@ -20,6 +22,7 @@ const KEYS = {
   buckets: 'stillrhythm:buckets:v1',
   calibration: 'stillrhythm:calibration:v1',
   postureStretch: 'stillrhythm:posture-stretch:v1',
+  telemetry: 'stillrhythm:telemetry:v1',
   dismissedSummary: 'stillrhythm:dismissed-summary:v1',
   migratedFromStill: 'stillrhythm:migrated-from-still:v1',
   theme: 'stillrhythm:theme',
@@ -762,4 +765,70 @@ export function savePostureStretch(
     updatedAt: nowWallMs,
     dateKey: getLocalDateKey(nowWallMs),
   });
+}
+
+// ============================================================================
+// Light Local Diagnostic Telemetry (100% local ring buffer, max 160 entries)
+// Zero video/audio ever saved — only compact numeric/label events for tuning.
+// ============================================================================
+const TELEMETRY_MAX_ENTRIES = 160;
+
+export function loadTelemetry(): TelemetryEntry[] {
+  const list = readJson<TelemetryEntry[]>(KEYS.telemetry, []);
+  return Array.isArray(list) ? list : [];
+}
+
+export function appendTelemetry(
+  kind: TelemetryEventKind,
+  detail: string,
+  meta?: Record<string, string | number | boolean | null>
+): TelemetryEntry {
+  const entry: TelemetryEntry = {
+    id: createId(),
+    t: Date.now(),
+    kind,
+    detail,
+    ...(meta ? { meta } : {}),
+  };
+  const existing = loadTelemetry();
+  const next = [entry, ...existing].slice(0, TELEMETRY_MAX_ENTRIES);
+  writeJson(KEYS.telemetry, next);
+  return entry;
+}
+
+export function clearTelemetry(): void {
+  try {
+    localStorage.removeItem(KEYS.telemetry);
+  } catch {
+    // ignore
+  }
+}
+
+export function formatTelemetryLog(entries: TelemetryEntry[], limit = 60): string {
+  const slice = entries.slice(0, limit);
+  if (slice.length === 0) {
+    return 'Still Rhythm Debug Log — no diagnostic events recorded yet.';
+  }
+  const lines = [
+    `Still Rhythm Local Diagnostic Log (${slice.length} recent events, newest first)`,
+    '------------------------------------------------------------------------',
+  ];
+  for (const e of slice) {
+    const time = new Date(e.t).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const metaStr = e.meta
+      ? ' | ' +
+        Object.entries(e.meta)
+          .filter(([, v]) => v !== null && v !== undefined && v !== '')
+          .map(([k, v]) => `${k}=${v}`)
+          .join(' ')
+      : '';
+    lines.push(`[${time}] ${e.kind}: ${e.detail}${metaStr}`);
+  }
+  return lines.join('\n');
 }
