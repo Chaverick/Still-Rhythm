@@ -256,6 +256,9 @@ export interface LiveRhythmState {
   lipTransitions: number;
   backgroundAudioIgnored: boolean;
   voiceDb: number;
+  voiceLeqDb: number;
+  voiceNoiseFloorDb: number;
+  voiceHistoryDb: number[];
   voiceStatus: VoiceComfortStatus;
   micState: MicState;
   // Dual-camera sit/stand confirmation state

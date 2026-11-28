@@ -492,6 +492,9 @@ export function useStillSession({
             micState: 'off' as const,
             rawDb: 0,
             smoothedDb: 0,
+            leqDb: 0,
+            noiseFloorDb: 33,
+            historyDb: [],
             voiceBandActive: false,
             status: 'off' as const,
           };

@@ -188,20 +188,20 @@ export function SettingsView({
 
               <div className="posture-cal-box">
                 <div className="slider-head">
-                  <span className="slider-label">Personal voice comfort calibration</span>
+                  <span className="slider-label">Personal voice calibration (IEC dBA)</span>
                   <span className="slider-value tabular">
                     {rhythm.micState === 'active'
-                      ? `Live: ${rhythm.voiceDb} dB`
+                      ? `${rhythm.voiceDb} dBA · 3s avg ${rhythm.voiceLeqDb}`
                       : settings.voiceCalOffsetDb !== 0
-                        ? `Tuned (${settings.voiceCalOffsetDb > 0 ? '+' : ''}${settings.voiceCalOffsetDb} dB)`
-                        : 'Default scale'}
+                        ? `Trim ${settings.voiceCalOffsetDb > 0 ? '+' : ''}${settings.voiceCalOffsetDb} dB`
+                        : 'Standard (+0 dB)'}
                   </span>
                 </div>
                 <p className="toggle-desc">
-                  Every Mac and webcam mic reads volume differently. Tapping below listens for 3
-                  seconds while you talk normally and shifts the meter so your natural voice sits in
-                  the middle of the green zone (56 dB) — without changing your Mac&rsquo;s actual
-                  mic volume. Keyboard clacks are filtered out automatically.
+                  Uses IEC A-weighting (how human ears perceive loudness) with a 125 ms live curve
+                  and 3-second energy average (LAeq). Auto-center in 3 seconds below, or nudge the
+                  trim slider to match any reference meter (like Sound Meter or Apple Watch Noise)
+                  without changing your Mac&rsquo;s mic volume.
                 </p>
                 {voiceCalibrating && (
                   <div className="voice-cal-banner" role="status" aria-live="polite">
@@ -214,6 +214,27 @@ export function SettingsView({
                     </span>
                   </div>
                 )}
+                <label className="slider-row" htmlFor="slider-voice-cal-offset">
+                  <div className="slider-head">
+                    <span className="slider-label">Reference trim offset</span>
+                    <span className="slider-value tabular">
+                      {settings.voiceCalOffsetDb > 0
+                        ? `+${settings.voiceCalOffsetDb} dB`
+                        : `${settings.voiceCalOffsetDb} dB`}
+                    </span>
+                  </div>
+                  <input
+                    id="slider-voice-cal-offset"
+                    type="range"
+                    min={-25}
+                    max={25}
+                    step={1}
+                    value={settings.voiceCalOffsetDb}
+                    onChange={(e) =>
+                      onUpdateSettings({ voiceCalOffsetDb: Number(e.target.value) })
+                    }
+                  />
+                </label>
                 <div className="welcome-actions">
                   <button
                     type="button"
@@ -232,7 +253,7 @@ export function SettingsView({
                       className="text-link-btn text-link-btn--muted"
                       onClick={() => onUpdateSettings({ voiceCalOffsetDb: 0 })}
                     >
-                      Reset
+                      Reset to 0
                     </button>
                   )}
                 </div>

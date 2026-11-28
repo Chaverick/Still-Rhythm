@@ -40,8 +40,9 @@ interface PipWindowContentProps {
   sitWindowMinutes: number;
   standWindowMinutes: number;
   restlessnessLevel: RestlessnessLevel;
-  // Voice dB comfort, Meeting/Speaking, Dual-camera confirm, Camera angle check
+  // Voice dBA comfort, Meeting/Speaking, Dual-camera confirm, Camera angle tip
   voiceDb: number;
+  voiceLeqDb: number;
   voiceStatus: VoiceComfortStatus;
   micState: MicState;
   voiceComfortMinDb: number;
@@ -90,6 +91,7 @@ export function PipWindowContent({
   standWindowMinutes,
   restlessnessLevel,
   voiceDb,
+  voiceLeqDb,
   voiceStatus,
   micState,
   voiceComfortMinDb,
@@ -137,12 +139,13 @@ export function PipWindowContent({
   const boutPct = Math.min(100, Math.round((boutMins / Math.max(5, targetMins)) * 100));
   const readyToSwitch = boutMins >= Math.max(5, targetMins - 3);
 
-  // Voice meter positioning (32..86 dB)
-  const DB_MIN = 32;
-  const DB_MAX = 86;
+  // Voice dBA meter positioning (26..88 dBA)
+  const DB_MIN = 26;
+  const DB_MAX = 88;
   const toDbPct = (db: number) =>
     Math.max(0, Math.min(100, ((db - DB_MIN) / (DB_MAX - DB_MIN)) * 100));
   const liveDbPct = micState === 'active' ? toDbPct(voiceDb) : 0;
+  const leqDbPct = micState === 'active' && voiceLeqDb > 0 ? toDbPct(voiceLeqDb) : 0;
   const comfortStartPct = toDbPct(voiceComfortMinDb);
   const comfortWidthPct = Math.max(8, toDbPct(voiceComfortMaxDb) - comfortStartPct);
 
@@ -425,7 +428,7 @@ export function PipWindowContent({
             </div>
           )}
 
-          {/* 3. Live Voice Level (dB) Comfort Strip (modular: hides when mic is turned off) */}
+          {/* 3. Live Voice Level (dBA) Comfort Strip (modular: hides when mic is turned off) */}
           {micEnabled && (
             <div className="pip-voice-strip">
               <div className="pip-voice-head">
@@ -441,8 +444,8 @@ export function PipWindowContent({
                 >
                   {micState === 'active'
                     ? voiceStatus === 'loud'
-                      ? `${voiceDb} dB · Loud`
-                      : `${voiceDb} dB`
+                      ? `${voiceDb} dBA · Loud`
+                      : `${voiceDb} dBA${voiceLeqDb > 0 ? ` · avg ${voiceLeqDb}` : ''}`
                     : micState === 'denied'
                       ? 'Mic blocked'
                       : 'Mic off'}
@@ -467,6 +470,13 @@ export function PipWindowContent({
                   }`}
                   style={{ width: `${liveDbPct}%` }}
                 />
+                {micState === 'active' && voiceLeqDb > 0 && (
+                  <div
+                    className="pip-voice-leq-tick"
+                    style={{ left: `${leqDbPct}%` }}
+                    title={`3-second average: ${voiceLeqDb} dBA`}
+                  />
+                )}
               </div>
             </div>
           )}

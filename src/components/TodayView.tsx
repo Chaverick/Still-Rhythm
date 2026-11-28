@@ -24,6 +24,7 @@ import type {
 import { CyclicSighPacer } from './CyclicSighPacer';
 import { MorningSummaryCard } from './MorningSummaryCard';
 import { TypewriterHeadline } from './TypewriterHeadline';
+import { VoiceWaveMeter } from './VoiceWaveMeter';
 
 interface TodayViewProps {
   status: EngineStatus;
@@ -183,18 +184,6 @@ export function TodayView({
   const totalDeskSec = today.sittingSeconds + today.standingSeconds;
   const standPct = totalDeskSec > 0 ? Math.round((today.standingSeconds / totalDeskSec) * 100) : 0;
   const sitPct = totalDeskSec > 0 ? 100 - standPct : 100;
-
-  // Voice dB meter positioning (scale 32..86 dB)
-  const DB_MIN = 32;
-  const DB_MAX = 86;
-  const toDbPct = (db: number) =>
-    Math.max(0, Math.min(100, ((db - DB_MIN) / (DB_MAX - DB_MIN)) * 100));
-  const liveDbPct = rhythm.micState === 'active' ? toDbPct(rhythm.voiceDb) : 0;
-  const comfortStartPct = toDbPct(settings.voiceComfortMinDb);
-  const comfortWidthPct = Math.max(
-    8,
-    toDbPct(settings.voiceComfortMaxDb) - comfortStartPct
-  );
 
   // Calming recommendation matching
   const baseIdx = Math.max(
@@ -660,7 +649,7 @@ export function TodayView({
           </div>
         )}
 
-        {/* Band 2: Live Voice Volume (dB) Comfort Meter (modular: hides when mic is turned off) */}
+        {/* Band 2: Live IEC dBA Voice Loudness Wave (modular: hides when mic is turned off) */}
         {settings.micEnabled && (
         <div className="rhythm-band">
           <div className="rhythm-band-head">
@@ -668,7 +657,7 @@ export function TodayView({
               <div className="rhythm-label-row">
                 <span className="section-label">Voice level</span>
                 <span
-                  className={`voice-status-tag ${
+                  className={`voice-status-tag tabular ${
                     rhythm.voiceStatus === 'loud'
                       ? 'voice-status-tag--loud'
                       : rhythm.voiceStatus === 'comfortable'
@@ -683,15 +672,61 @@ export function TodayView({
                       : rhythm.micState !== 'active'
                         ? 'Mic off'
                         : rhythm.voiceStatus === 'loud'
-                          ? `${rhythm.voiceDb} dB · A bit loud`
+                          ? `${rhythm.voiceDb} dBA · A bit loud`
                           : rhythm.voiceStatus === 'comfortable'
-                            ? `${rhythm.voiceDb} dB · Comfortable`
-                            : `${rhythm.voiceDb} dB · Quiet`}
+                            ? `${rhythm.voiceDb} dBA · Comfortable`
+                            : `${rhythm.voiceDb} dBA · Quiet`}
                 </span>
+                {isRunning && rhythm.micState === 'active' && rhythm.voiceLeqDb > 0 && (
+                  <span
+                    className="voice-leq-chip tabular"
+                    title="3-second equivalent continuous energy average (LAeq) — ignores brief clicks"
+                  >
+                    3s avg {rhythm.voiceLeqDb}
+                  </span>
+                )}
               </div>
             </div>
 
             <div className="voice-head-actions">
+              {isRunning && rhythm.micState === 'active' && (
+                <div
+                  className="voice-trim-group"
+                  role="group"
+                  aria-label="Manual decibel calibration trim"
+                  title="Nudge calibration offset up or down to match a reference sound meter"
+                >
+                  <button
+                    type="button"
+                    className="voice-trim-btn"
+                    aria-label="Decrease calibration by 1 dB"
+                    onClick={() =>
+                      onUpdateSettings({
+                        voiceCalOffsetDb: Math.max(-25, settings.voiceCalOffsetDb - 1),
+                      })
+                    }
+                  >
+                    −
+                  </button>
+                  <span className="voice-trim-val tabular">
+                    {settings.voiceCalOffsetDb > 0
+                      ? `+${settings.voiceCalOffsetDb}`
+                      : settings.voiceCalOffsetDb}
+                  </span>
+                  <button
+                    type="button"
+                    className="voice-trim-btn"
+                    aria-label="Increase calibration by 1 dB"
+                    onClick={() =>
+                      onUpdateSettings({
+                        voiceCalOffsetDb: Math.min(25, settings.voiceCalOffsetDb + 1),
+                      })
+                    }
+                  >
+                    +
+                  </button>
+                </div>
+              )}
               {isRunning && rhythm.micState === 'active' ? (
                 <button
                   type="button"
@@ -728,41 +763,23 @@ export function TodayView({
             </div>
           )}
 
-          <div
-            className={`voice-meter-track ${
-              rhythm.voiceStatus === 'loud' ? 'voice-meter-track--loud' : ''
-            }`}
-            aria-label={`Voice level ${rhythm.voiceDb} decibels`}
-          >
-            {/* Shaded sage-green comfortable range */}
-            <div
-              className="voice-comfort-band"
-              style={{ left: `${comfortStartPct}%`, width: `${comfortWidthPct}%` }}
-              title={`Comfortable zone: ${settings.voiceComfortMinDb}–${settings.voiceComfortMaxDb} dB`}
-            />
-            {/* Live loudness fill */}
-            <div
-              className={`voice-meter-fill ${
-                rhythm.voiceStatus === 'loud'
-                  ? 'voice-meter-fill--loud'
-                  : rhythm.voiceStatus === 'comfortable'
-                    ? 'voice-meter-fill--ok'
-                    : ''
-              }`}
-              style={{ width: `${liveDbPct}%` }}
-            />
-          </div>
+          <VoiceWaveMeter
+            active={isRunning && rhythm.micState === 'active'}
+            historyDb={rhythm.voiceHistoryDb}
+            liveDb={rhythm.voiceDb}
+            leqDb={rhythm.voiceLeqDb}
+            noiseFloorDb={rhythm.voiceNoiseFloorDb}
+            comfortMinDb={settings.voiceComfortMinDb}
+            comfortMaxDb={settings.voiceComfortMaxDb}
+            status={rhythm.voiceStatus}
+          />
           <div className="voice-scale-row tabular">
-            <span>Quiet</span>
+            <span>Quiet · room {isRunning && rhythm.micState === 'active' ? `${rhythm.voiceNoiseFloorDb} dBA` : 'baseline'}</span>
             <span>
-              Comfort zone ({settings.voiceComfortMinDb}–{settings.voiceComfortMaxDb} dB)
+              Comfort ({settings.voiceComfortMinDb}–{settings.voiceComfortMaxDb} dBA)
             </span>
-            <span>Loud</span>
+            <span>IEC dBA · 125ms</span>
           </div>
-          <p className="voice-help-note">
-            Keyboard clacks filtered · 3s &ldquo;Set my voice&rdquo; centers the green zone to your
-            mic without changing Mac volume.
-          </p>
         </div>
         )}
 

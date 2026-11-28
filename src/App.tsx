@@ -878,6 +878,7 @@ export function App() {
             standWindowMinutes={settings.standWindowMinutes}
             restlessnessLevel={session.rhythm.restlessnessLevel}
             voiceDb={session.rhythm.voiceDb}
+            voiceLeqDb={session.rhythm.voiceLeqDb}
             voiceStatus={session.rhythm.voiceStatus}
             micState={session.rhythm.micState}
             voiceComfortMinDb={settings.voiceComfortMinDb}

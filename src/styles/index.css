@@ -4192,3 +4192,162 @@ input[type='range'] {
   line-height: 1.45;
 }
 
+/* Leading-edge IEC dBA live scrolling voice wave & inline trim controls */
+.voice-wave-box {
+  width: 100%;
+  height: 70px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition: border-color 180ms ease;
+}
+
+.voice-wave-box--loud {
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+.voice-wave-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.voice-wave-zone-comfort {
+  fill: color-mix(in srgb, var(--sage) 13%, transparent);
+}
+
+.voice-wave-zone-loud {
+  fill: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.voice-wave-guide {
+  stroke: color-mix(in srgb, var(--sage) 32%, transparent);
+  stroke-width: 1;
+}
+
+.voice-wave-guide--ceiling {
+  stroke: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.voice-wave-floor {
+  stroke: color-mix(in srgb, var(--ink-muted) 42%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.voice-wave-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 180ms ease;
+}
+
+.voice-wave-line--idle {
+  stroke: color-mix(in srgb, var(--ink-muted) 45%, transparent);
+  stroke-width: 1.4;
+}
+
+.voice-wave-line--quiet {
+  stroke: var(--ink-secondary);
+}
+
+.voice-wave-line--ok {
+  stroke: var(--sage);
+}
+
+.voice-wave-line--loud {
+  stroke: var(--accent);
+}
+
+.voice-wave-area {
+  transition: fill 180ms ease;
+}
+
+.voice-wave-area--idle {
+  fill: transparent;
+}
+
+.voice-wave-area--quiet {
+  fill: color-mix(in srgb, var(--ink-secondary) 9%, transparent);
+}
+
+.voice-wave-area--ok {
+  fill: color-mix(in srgb, var(--sage) 15%, transparent);
+}
+
+.voice-wave-area--loud {
+  fill: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.voice-wave-dot {
+  fill: var(--surface);
+  stroke-width: 2.2;
+}
+
+.voice-wave-leq-tick {
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+.voice-leq-chip {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+
+.voice-trim-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--ink-secondary);
+}
+
+.voice-trim-btn {
+  border: none;
+  background: transparent;
+  color: var(--ink-secondary);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.voice-trim-btn:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.voice-trim-val {
+  min-width: 30px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.pip-voice-leq-tick {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--ink);
+  opacity: 0.65;
+  pointer-events: none;
+  transition: left 220ms ease;
+}
+
+
